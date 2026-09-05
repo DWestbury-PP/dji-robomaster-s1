@@ -85,18 +85,21 @@ glass-to-glass, or the mobile app needs to work off-LAN.
 
 ---
 
-### 6. Safety is a library inside `s1-link`, not a service
+### 6. Safety is a library inside `s1-driver`, not a service
 
 **Decision.** Deadman, clamps, arming and e-stop are enforced in-process on the
-last hop before the wire.
+last hop before the wire. Post-M0 that means **written in Go**, inside the
+process that holds the bridge handle.
 
 **Why.** A safety *service* is a hop, and a hop is something a future consumer
 can be written around — including by us, at 1 a.m., "just to test something."
-Inside `s1-link` there is no other path to the robot, so the guarantee holds by
-construction rather than by discipline.
+Inside `s1-driver` there is no other path to the robot, so the guarantee holds by
+construction rather than by discipline. The tempting alternative — a Python
+supervisor in front of a dumb Go transport — puts safety on the second-to-last
+hop, which is advisory. Rejected for that reason.
 
 **Revisit if.** Never, ideally. If a second process ever needs to talk to the
-robot, it goes through `s1-link`.
+robot, it goes through `s1-driver`.
 
 ---
 
@@ -116,12 +119,63 @@ still not in a room with living things in it.
 
 ---
 
-### 8. Root one vehicle, keep one stock
+### 8. ~~Root one vehicle, keep one stock~~ — SUPERSEDED by M0
 
-**Decision.** Whichever S1 can take Path A gets rooted; the second stays
-untouched until the first is proven end-to-end.
+**Superseded 2026-09-04.** Both vehicles came back on firmware 00.06.0518, the
+version that closes the root hack, with 00.06.0521 staged. There is nothing to
+root and no version split to exploit. Path A is off the table
+(HARDWARE.md §RESULT).
 
-**Why.** Rooting is unsupported and the community reports firmware updates
-breaking working installs. Two vehicles means the experiment has a control. If
-their firmware versions differ, the split is free: root the older one, and the
-newer one becomes the Path C (CAN bus) testbed it was always going to be.
+**What replaces it.** Path B (app-mode via UnityBridge) on vehicle 1, which
+needs no modification at all. Vehicle 2 stays pristine as the control, and
+becomes the Path C (CAN bus) testbed if and when we want unrestricted authority.
+
+**Standing rule that survives.** Do not let 00.06.0521 install on either unit.
+
+---
+
+### 9. `s1-driver` is one Go process that speaks Redis directly
+
+**Decision.** Control and video collapse into a single Go binary that consumes
+`s1.commands` and publishes `s1.telemetry` and `frames` itself, rather than a Go
+transport sidecar behind a Python `s1-link`.
+
+**Why.** Two reasons, one hard and one soft. The hard one: **the UnityBridge
+handle is process-wide**, so a separate video service physically cannot hold its
+own connection — link and camera must share a process. The soft one: any Python
+wrapper in front of it would sit *upstream* of the safety layer, which is
+exactly the arrangement #6 rejects.
+
+**Cost, stated honestly.** Go enters the stack, and the safety layer gets
+written in a second language rather than reusing Python. Accepted: it is ~150
+lines, and it is the one place where being on the last hop matters more than
+language uniformity.
+
+**Revisit if.** We move to Path C, where we own the transport end to end and the
+process-wide-handle constraint disappears.
+
+---
+
+### 10. Accept the Rosetta 2 dependency, with an exit
+
+**Decision.** Build `s1-driver` as `GOARCH=amd64` and run it under Rosetta 2 on
+the M-series Mac.
+
+**Why.** DJI never shipped an arm64 macOS build of the UnityBridge library and
+never will; the upstream repo handles Apple Silicon exactly this way. The
+process is I/O-bound, so emulation is cheap — with one exception worth
+measuring, video decode, which happens inside the emulated blob instead of on
+VideoToolbox (ARCHITECTURE.md §6).
+
+**The risk.** Apple has signalled Rosetta 2 will be pared back after macOS 27.
+This Mac is on macOS 26.
+
+**The exit, and why it is cheap.** `s1-driver` is a small, self-contained
+process with a bus interface and no GPU work. If Rosetta goes away it relocates
+to a Linux amd64 host (upstream runs the Windows DLL under Wine there) or to an
+Intel box on the LAN, and *nothing else in either repo changes* — foveate keeps
+running natively on the Mac. The bus is what makes this a packaging problem
+instead of a rewrite.
+
+**Revisit if.** M1 shows decode under Rosetta is a material share of the video
+budget, or macOS 27 lands on this machine.

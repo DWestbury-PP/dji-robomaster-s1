@@ -21,9 +21,25 @@ Then read the table:
 
 | Firmware | Path A (root + EP SDK) | Notes |
 |---|---|---|
-| ≤ 00.06.0300 | ✅ open | The good case. Root, upload EP SDK, done. |
+| ≤ 00.06.0300 | ✅ open | Root, upload EP SDK, done. |
 | 00.06.0518 and later | ❌ patched | Root script fails; the sandbox escape is closed. |
 | between / unknown | ⚠️ verify | Try the root step; it fails loudly and non-destructively. |
+
+## RESULT (2026-09-04): both vehicles are on 00.06.0518 — Path A is closed
+
+| Vehicle | Active | Downloaded / staged |
+|---|---|---|
+| 1 | **00.06.0518** | 00.06.0521 |
+| 2 | **00.06.0518** | 00.06.0521 |
+
+Both units sit on the first firmware known to break the root hack, and neither
+differs from the other, so the "root one, keep one stock" split is moot
+(DECISIONS.md #8, superseded). No clean downgrade path is known.
+
+**Standing hardware rule: do not let 00.06.0521 install.** It is staged on both
+vehicles, one confirmation tap away. It almost certainly changes nothing for
+rooting — both are post-patch — but 00.06.0518 is the better-documented state
+and there is no way back. Keep the phone off the internet when using the app.
 
 DJI has wound down the education line and is not shipping new S1 firmware, so
 a vehicle that is old enough today stays viable indefinitely. There is no known
@@ -59,20 +75,49 @@ if we prefer.
 **Risk:** rooting is irreversible-ish and unsupported. Do it on one vehicle
 first, keep the second stock until the first is proven.
 
-## Path B — app-mode impersonation (fallback)
+## Path B — app-mode impersonation (**selected**)
 
 `brunoga/robomaster` (Go) drives a **stock, unrooted** S1 by wrapping DJI's
-proprietary UnityBridge native library extracted from the mobile app. Firmware
-independent. Costs: a Go toolchain, a closed-source blob, an appID/QR pairing
-step, and a less documented surface than Path A.
+proprietary UnityBridge native library. It impersonates the mobile app, so it is
+firmware-independent — its only precondition is that the app still works on the
+vehicle, which we have now confirmed on the bench.
 
-Integration shape if we land here: a small Go sidecar exposing the same
-command/telemetry interface `s1-link` already defines, so nothing above the
-driver boundary changes.
+Verified against the repo (2026-09-04):
 
-- https://github.com/brunoga/robomaster
+| Question | Finding |
+|---|---|
+| Maintained? | Yes — last push 2025-05-18. One maintainer, ~56 stars. |
+| Needs root? | No. Stock vehicle, current firmware. |
+| Apple Silicon? | Yes, with a caveat — see below. |
+| Blob sourcing? | **Vendored in-repo** (`unitybridge/wrapper/lib/`) for android arm/arm64, darwin amd64, ios arm64, windows. No extraction from the DJI app needed. |
+| Control surface | `module/{chassis,gimbal,gun,camera,controller,connection,robot,gamepad,sdcard}` — everything we need. |
+| Video | `module/camera` delivers **decoded RGB frames via callback** (`rgb.go`, `video_callback.go`). No H.264 parsing on our side. |
 
-## Path C — brain transplant via CAN bus (escape hatch)
+**The Apple Silicon caveat.** There is no arm64 macOS build of DJI's library.
+`install.go` is explicit: *"MacOS arm64 will use the amd64 library through
+Rosetta"*, and `compile_darwin_arm64.sh` builds the Go binary as
+`GOARCH=amd64`. So the driver process runs under Rosetta 2 on the M-series Mac.
+Acceptable for an I/O-bound process; the thing to actually measure is video
+decode, which happens inside the emulated blob rather than on VideoToolbox
+(ARCHITECTURE.md §6). Apple has signalled Rosetta 2 will be pared back after
+macOS 27 — a real revisit trigger, mitigated by the fact that the driver is a
+small relocatable process (DECISIONS.md #10).
+
+**Cost, stated honestly.** The API is a reverse-engineered key/value + event
+system, not a clean SDK. The repo's own README says the remaining work is
+"figuring out what each key does and when they should be used." Budget for that.
+
+Related repos by the same author, both useful later:
+
+- https://github.com/brunoga/robomaster — the library
+- https://github.com/brunoga/robomaster-control — sample control program
+- https://github.com/brunoga/robomaster-mobile — gomobile interface; **the path to the eventual native mobile app talking to the S1 directly**
+- https://github.com/brunoga/robomaster-tracker — GoCV ball tracker, reference for a vision loop
+
+Note: the vendored DJI library is proprietary. Personal use, private repo; we
+neither redistribute it nor commit it here.
+
+## Path C — brain transplant via CAN bus (escape hatch, second vehicle)
 
 Bypass the DJI intelligent controller entirely: put a Pi 4 + STM32 on the S1's
 internal CAN bus and command motors, gimbal and blaster directly. Firmware

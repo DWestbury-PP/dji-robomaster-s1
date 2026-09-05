@@ -6,53 +6,79 @@
 
 ## Where things stand (2026-09-04, end of session 1)
 
-**Design only. No code written.** Session 1 scoped the project, surveyed the S1
-hacking landscape, and settled two forks: peer repo on foveate's bus (#1), and
-teleop before autonomy (#2).
+**Design only. No code written.** M0 is complete: both vehicles were powered up
+and their firmware read, which settled the transport.
 
-## Blocker: M0 — firmware triage
+## M0 result — Path A is closed, Path B is selected
 
-Everything about the transport hangs on one unknown: **which firmware the two
-vehicles are running.** The design does not depend on the answer — the driver
-sits behind an interface (ARCHITECTURE.md §3) — but the first line of code does.
+| Vehicle | Active firmware | Staged |
+|---|---|---|
+| 1 | **00.06.0518** | 00.06.0521 |
+| 2 | **00.06.0518** | 00.06.0521 |
 
-**Action for the operator (see HARDWARE.md §0 for the full procedure):**
+00.06.0518 is the version that closes the root exploit, and both units are on
+it, so there is no version split to exploit and no known downgrade. **We drive a
+stock, unmodified S1 through the app-mode UnityBridge library**
+([brunoga/robomaster](https://github.com/brunoga/robomaster)) — HARDWARE.md
+Path B, verified this session as maintained, Apple-Silicon-capable via Rosetta,
+with the vendored DJI blobs in-repo and a full control + camera surface.
 
-- [ ] Vehicle 1 — firmware version: `________`
-- [ ] Vehicle 2 — firmware version: `________`
+⚠️ **Standing hardware rule: do not let 00.06.0521 install on either vehicle.**
+It is staged and one confirmation tap away. Keep the phone off the internet when
+using the RoboMaster app.
 
-Check with the phone on the S1's own AP and cellular data off, so the app has
-no route to fetch an update while you look. **Decline every update prompt.**
-≤ 00.06.0300 opens Path A; 00.06.0518+ closes it.
+## What M0 changed in the design
+
+- `s1-link` and `s1-video` **collapsed into one Go process, `s1-driver`** — the
+  bridge handle is process-wide, so control and video must share a process
+  (DECISIONS.md #9).
+- The safety layer is now **written in Go**, still on the last hop (#6).
+- Go enters the stack, running as amd64 under Rosetta 2, with a documented exit
+  to a Linux host if Rosetta goes away (#10).
+- Decision #8 (root one, keep one stock) is **superseded**. Vehicle 2 stays
+  pristine as the control and as the future Path C testbed.
+- No H.264 parsing needed — the camera module delivers decoded RGB via callback.
 
 ## Roadmap
 
-See ARCHITECTURE.md §7. Nothing started.
+See ARCHITECTURE.md §7.
 
 | Milestone | State |
 |---|---|
-| M0 — firmware triage, transport choice | ⛔ blocked on hardware |
-| M1 — link + latency harness | not started |
-| M2 — safety layer | not started |
+| M0 — firmware triage, transport choice | ✅ done — Path B |
+| M1 — link + latency harness | **next** |
+| M2 — safety layer (Go) | not started |
 | M3 — browser teleop | not started |
 | M4 — video into foveate | not started |
 | M5–M7 — intentions, autonomy, mobile | not started |
 
 ## Open questions
 
-1. **Path C camera.** If we ever replace the intelligent controller, does the
-   FPV camera and Wi-Fi go with it? Assumed yes, unverified. Matters a great
-   deal — the VLA premise runs on that camera. Bench question, not a web question.
-2. **Wi-Fi mode.** Direct (S1 as AP) is simpler and lower-latency; router mode
-   puts the robot on the LAN alongside the Mac running foveate and Ollama. M1
-   should measure both, since direct mode may force the Mac off its own network.
-3. **foveate M8.** Multi-camera + crash recovery is the prerequisite for M4 here.
+1. **Key discovery.** The bridge is a reverse-engineered key/value + event API;
+   upstream's README says the remaining work is learning what each key does. M1
+   should produce a map of the keys we actually need.
+2. **Rosetta decode cost.** Video decode happens inside the emulated blob, not
+   on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
+   design (ARCHITECTURE.md §6).
+3. **Wi-Fi mode.** Direct (S1 as AP) may force the Mac off the network hosting
+   Redis and Ollama. Router mode avoids that but adds a hop. Measure both.
+4. **Two vehicles at once.** The bridge handle is process-wide; whether a second
+   S1 can be driven from the same host is unknown.
+5. **Path C camera.** If we ever replace the intelligent controller, does the FPV
+   camera and Wi-Fi go with it? Assumed yes, unverified. Bench question.
+6. **foveate M8.** Multi-camera + crash recovery is the prerequisite for M4 here.
    Sequence it in the foveate session, not this one.
+7. **Battery health.** Only one battery held enough charge to power a vehicle
+   this session. Two-year-old LiPos on a shelf; replacements may be a
+   prerequisite for any sustained M1 testing, and DJI no longer sells them.
 
 ## Session log
 
 **Session 1 (2026-09-04).** Surveyed the S1 landscape: EP SDK hack (Path A),
 app-mode impersonation via UnityBridge (Path B), CAN bus brain transplant
-(Path C) — see HARDWARE.md. Confirmed foveate's roadmap already anticipates
-this consumer (M10 `intentions`, "schema TBD with the movement system").
-Wrote the initial design set. No code.
+(Path C) — see HARDWARE.md. Confirmed foveate's roadmap already anticipates this
+consumer (M10 `intentions`, "schema TBD with the movement system"). Wrote the
+initial design set. Operator then powered up a vehicle and read firmware on
+both: 00.06.0518 active, 00.06.0521 staged, killing Path A. Verified Path B
+against the upstream repo and revised the design around a single Go
+`s1-driver`. No code.

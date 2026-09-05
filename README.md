@@ -11,31 +11,45 @@ vision-language model can eventually drive.
 
 ```
  browser (WASD / gamepad)                    foveate (peer repo, shared bus)
-        │  WebSocket                          ┌────────────────────────────┐
-        ▼                                     │ capture │ motion │ YOLO    │
-   ┌─────────┐   s1.commands   ┌──────────┐   │            │              │
-   │ teleop  │ ──────────────► │ s1-link  │   │            ▼              │
-   │ :8700   │ ◄────────────── │ (safety  │   │          VLM ──► fusion   │
-   └─────────┘   s1.telemetry  │  inline) │   └────────────┬───────────────┘
-        ▲                      └────┬─────┘                │ intentions
-        │ MJPEG                     │ velocity cmds        │ (later)
-        │                           ▼                      ▼
-   ┌──────────┐  frames      ╔═════════════╗        ┌─────────────┐
-   │ s1-video │ ───────────► ║ RoboMaster  ║        │ intent loop │
-   │  :40921  │ ◄─── H.264 ──║     S1      ║        │  (later)    │
-   └──────────┘              ╚═════════════╝        └─────────────┘
+        │  WebSocket                        ┌──────────────────────────────┐
+        ▼                                   │  motion │ YOLO │ VLM │ fusion │
+   ┌─────────┐                              └────▲──────────────────┬───────┘
+   │ teleop  │ ── s1.commands ──┐        frames  │                  │ fusion
+   │ :8700   │ ◄─ s1.telemetry ─┤                │                  ▼
+   └─────────┘                  ▼                │           ┌─────────────┐
+        ▲                ┌──────────────┐ ───────┘           │ intent loop │
+        │ MJPEG          │  s1-driver   │                    │   (later)   │
+        └────────────────│  (Go)        │ ◄── intentions ────└─────────────┘
+                         │  safety      │
+                         │  inline      │
+                         └──────┬───────┘
+                       UnityBridge (app mode)
+                                ▼
+                         ╔═════════════╗
+                         ║ RoboMaster  ║  stock, unrooted, fw 00.06.0518
+                         ║     S1      ║
+                         ╚═════════════╝
 ```
 
-The key structural idea: **`s1-video` is a drop-in replacement for foveate's
-capture service.** The robot's camera enters the existing pipeline as just
-another camera, publishing the same `frames` schema. No perception code is
-duplicated or forked.
+Two structural ideas do most of the work here:
+
+**`s1-driver` publishes `frames` in foveate's own schema**, so the robot's camera
+enters the existing perception pipeline as just another camera. No perception
+code is duplicated or forked.
+
+**Control and video share one process** because DJI's bridge handle is
+process-wide — which is also why the safety layer lives inside it, on the last
+hop before the wire, where nothing can route around it.
 
 ## Status
 
-Design phase. Nothing is implemented — the transport choice is blocked on a
-hardware fact (which firmware the two vehicles are running). See
-[docs/STATUS.md](docs/STATUS.md) for the blocker and
+Design phase; nothing implemented yet. M0 is done: both vehicles run firmware
+00.06.0518, which closes the root-and-EP-SDK route, so we drive a **stock,
+unmodified S1** by impersonating the mobile app. Next is M1 — a latency
+harness, because two numbers (Wi-Fi jitter under motion, and video decode under
+Rosetta) decide whether the autonomy design survives contact.
+
+See [docs/STATUS.md](docs/STATUS.md) for where things stand and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
 
 ## Documentation
