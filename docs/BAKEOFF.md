@@ -47,6 +47,52 @@ frames: grammar-constrained decoding guarantees the *shape* of an answer and
 guarantees nothing about its truth, which turns a visible failure into a
 schema-valid wrong decision that downstream code trusts.
 
+## Round 2: hosted models (2026-09-05)
+
+Same corpus, same frames, same schema, through the Anthropic API.
+
+| Model | valid | p50 | TTFT | cost/call | cost/hr @0.1 Hz |
+|---|---|---|---|---|---|
+| **gemma4:e4b** (local) | 100% | **3.5 s** | **1.0 s** | — | **$0** |
+| claude-haiku-4-5 | 100% | 5.4 s | 1.6 s | $0.0027 | $0.98 |
+| claude-sonnet-5 | 100% | 5.5 s | 1.5 s | $0.0076 | $2.75 |
+| claude-opus-5 | 100% | 7.6 s | 2.1 s | $0.0197 | $7.08 |
+
+**Hosted is not faster.** The local 4B model beat every hosted model on latency;
+a network round trip plus a larger model does not win on speed. Anyone reaching
+for an API to reduce latency here would be reaching for the wrong lever.
+
+**Hosted is decisively better at deciding**, which is the thing that was broken.
+
+On frame 0166 — an aquarium on a stand, curtains across a doorway, open floor:
+
+| Model | obstacles returned |
+|---|---|
+| gemma4:e4b | `[]` — saw nothing |
+| claude-haiku-4-5 | aquarium (left, far), curtains (ahead, far) |
+| claude-sonnet-5 | + cables, wall/door edge |
+| claude-opus-5 | + low shelf edge, power cable on floor; and the only model to report `confidence: medium` / `lighting: dim` where others claimed `high` / `good` |
+
+On the cluttered frame 0208, **only Sonnet 5 returned `clear_path: none`**, with
+three obstacles marked blocking, consistent with its own summary. Every local
+model contradicted itself here.
+
+**The extra detail is accurate, not hallucinated.** Verified against the frame
+by eye: Opus correctly identified a second tracked robot on the floor and a
+person's leg beside the chair — both entirely missed by the local models — and
+hedged the ambiguous one as *"chair leg / person's leg"*. Its six obstacles all
+check out.
+
+**What has not changed:** every model here still takes 5–8 s. None can sit in a
+control loop, so the geometry-owns-clearance split below stands regardless of
+which model wins.
+
+### Cost note
+
+Prices are for a 1280×720 frame (~1,230 image tokens). Downscaling to 640×360
+cuts image tokens roughly 4× and is worth testing — our frames carry heavy
+motion blur, so the extra resolution may be buying nothing.
+
 ## What we do about it
 
 Split responsibility by what each tier is actually good at.
@@ -54,7 +100,15 @@ Split responsibility by what each tier is actually good at.
 | Question | Owner | Why |
 |---|---|---|
 | Is the way clear? How close? | **fast tier** — YOLO + ground-plane geometry | a spatial question deserves a spatial answer; it also feeds the veto clamp |
-| What *is* this place? What should I be careful of? | **scene tier** — gemma4:e4b | needs world knowledge, and it is genuinely good at it |
+| What *is* this place? What should I be careful of? | **scene tier** — a hosted model | needs world knowledge and judgement; local 4B describes but cannot decide |
+
+For the scene tier, **claude-sonnet-5 is the recommendation** at $2.75/hr of
+continuous driving: it was the only model to call a blocked path blocked, and
+its obstacle lists are specific and internally consistent. Opus 5 is richer
+still — it alone spotted the second robot and a person — and costs 2.6× more for
+2 s more latency; worth it when analysis matters more than pace. Haiku 4.5 at
+$0.98/hr is a real option if the tier runs constantly. gemma4:e4b stays useful
+as the offline fallback when there is no network.
 
 This is foveate's tier split — fast tier authoritative for *where and how many*,
 slow tier for *what and in what state* — reached independently from our own

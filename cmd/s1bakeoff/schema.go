@@ -12,14 +12,18 @@ package main
 //   - `confidence` is the model's own hedge. It is not trustworthy on its own,
 //     but a model that says "low" while the fast tier disagrees is a useful
 //     signal for fusion.
+//   - Every object sets additionalProperties: false. The Anthropic API rejects
+//     a schema without it; Ollama does not care, so one schema serves both.
 var SceneSchema = map[string]any{
-	"type": "object",
+	"type":                 "object",
+	"additionalProperties": false,
 	"properties": map[string]any{
 		"summary": map[string]any{"type": "string"},
 		"obstacles": map[string]any{
 			"type": "array",
 			"items": map[string]any{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]any{
 					"object":    map[string]any{"type": "string"},
 					"bearing":   enum("left", "ahead-left", "ahead", "ahead-right", "right"),

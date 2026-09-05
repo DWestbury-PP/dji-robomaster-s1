@@ -64,10 +64,16 @@ type result struct {
 	Raw        string
 	Thinking   string
 	Scene      Scene
+	// Set for hosted models only, so the report can price a scene tier.
+	InputTokens  int64
+	OutputTokens int64
+	CostUSD      float64
 }
 
 func main() {
 	flag.Parse()
+	// The API key lives in .env, which is gitignored. Nothing here prints it.
+	loadDotEnv(".env")
 	if *corpus == "" {
 		fmt.Fprintln(os.Stderr, "error: -corpus is required")
 		os.Exit(2)
@@ -103,7 +109,12 @@ func main() {
 				fmt.Fprintf(os.Stderr, "   read %s: %v\n", f, err)
 				continue
 			}
-			r := score(*host, model, f, img, *timeout)
+			var r result
+			if isAnthropic(model) {
+				r = scoreAnthropic(model, f, img, *timeout, *think)
+			} else {
+				r = score(*host, model, f, img, *timeout)
+			}
 			all = append(all, r)
 
 			status := "ok "
@@ -260,7 +271,18 @@ func report(all []result, models []string, outDir string) {
 				truncated++
 			}
 		}
+		var cost float64
+		for _, r := range rs {
+			cost += r.CostUSD
+		}
+
 		note := ""
+		if cost > 0 {
+			// Per-call cost, and what an hour of driving would cost at one
+			// observation every ten seconds.
+			per := cost / float64(len(rs))
+			note += fmt.Sprintf(" $%.4f/call ≈ $%.2f/hr@0.1Hz", per, per*360)
+		}
 		if thinking > 0 {
 			note += fmt.Sprintf(" reasons(%d/%d)", thinking, len(rs))
 		}
