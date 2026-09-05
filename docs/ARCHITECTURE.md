@@ -185,6 +185,39 @@ rotating through 360°, and the antenna continuously changing orientation moved
 nothing outside the stationary range. The risk this milestone existed to find is
 not there.
 
+### Router mode — measured 2026-09-05, and it changes the picture
+
+With the S1 joined to the house network instead of serving its own AP
+(`runs/router-01.json`, 60 s, stationary):
+
+| Metric | WiFi Direct | **Router mode** |
+|---|---|---|
+| Throughput | 30.1 fps | **30.1 fps** |
+| Frame interval p50 | 33.0 ms | **33.3 ms** |
+| p95 | 63.9–68.2 ms | **37.7 ms** |
+| p99 | 121.8–129.4 ms | **42.5 ms** |
+| Jitter (σ) | 21.9–29.3 ms | **3.3 ms** |
+| Smallest gap | ~1 ms (bursts) | 4.3 ms |
+| Time to first frame | 288–883 ms | 1420 ms |
+| Process CPU | 0.24–0.25 cores | 0.25 cores |
+
+**Jitter falls by roughly 7×, and the p99 tail by 3×.** The burstiness is
+largely gone: the smallest gap moves from ~1 ms — two frames arriving
+back-to-back — to a healthy 4.3 ms. Same throughput, same CPU, marginally slower
+to first frame.
+
+> **A correction.** The stationary-versus-motion comparison above concluded the
+> burstiness was "not the radio: it is the decoder delivering frames in
+> batches." That over-reached. Identical behaviour moving and still ruled out
+> *motion* as the cause; it did not rule out the link. Changing a different
+> variable — the robot's own AP for a real access point — improved jitter 7×,
+> which the decoder-batching explanation cannot account for. The direct-mode
+> radio was the dominant term.
+
+**Router mode is now the default** for both binaries. It is better on every
+measure that matters, removes the dual-homing arrangement entirely (one network
+for Redis, Ollama and the robot), and gives whole-home range.
+
 > **An earlier run (`runs/direct-03-motion.json`) reported the same conclusion
 > and was not valid evidence for it.** The chassis never moved: commands went to
 > `Chassis.SetSpeed()`, which the S1 ignores, and `DirectSendKeyValue` is

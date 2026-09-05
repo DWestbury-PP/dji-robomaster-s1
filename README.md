@@ -57,6 +57,7 @@ layer that stops the vehicle when anything goes quiet.
 | Transport | app-mode UnityBridge on **stock firmware 00.06.0518** — no rooting |
 | Video | 1280×720 at **30.1 fps**, 0% deficit, **0.24 cores** under Rosetta |
 | Under motion | drive motors, strafes and 360° rotation change nothing |
+| Link | router mode — jitter **3.3 ms σ**, ~7× better than the robot's own AP |
 | Control | 20 Hz rate commands under a 250 ms deadman |
 | Tests | **36** (48 with subtests), race-clean |
 
@@ -67,6 +68,7 @@ stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
 
 ```bash
 ./scripts/install-bridge.sh && ./scripts/build.sh
+./bin/s1find              # where is the robot?
 ./bin/s1teleop            # console at http://localhost:8700
 ./bin/s1teleop -mock      # no robot needed
 ```

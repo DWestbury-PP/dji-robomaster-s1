@@ -51,11 +51,39 @@ FrontArmor BackArmor LeftArmor RightArmor LeftHeadArmor RightHeadArmor
 
 ---
 
-## 2. Network — dual-homed, deliberately
+## 2. Network — router mode (current), and the direct-mode past
 
-The robot's Wi-Fi has no uplink, so joining it would normally cost all internet
-access. A USB CAT5 adapter solves that: **Ethernet carries the internet, Wi-Fi
-carries the robot.**
+**The S1 is joined to the house network.** One network for everything; no
+adapter, no interface juggling.
+
+| | |
+|---|---|
+| Robot | `192.168.1.39`, MAC `60:60:1f:cd:b8:66` |
+| App ID | `4050813280395343415`, paired |
+| Announces | UDP broadcast on `:45678`, ~every 500 ms |
+| Mac | ordinary Wi-Fi, single default route |
+
+Find it any time — this works when `ping` does not, because the S1 ignores ICMP:
+
+```bash
+./bin/s1find            # one-shot: is the robot on the network, and paired?
+./bin/s1find -watch     # every broadcast packet, to confirm it is still alive
+```
+
+Router mode is not just more convenient. It is **measurably better**: jitter
+~7× lower and the p99 tail 3× lower than the robot's own AP
+(ARCHITECTURE.md §6). It is the default for both binaries; `-wifi-direct` opts
+back out.
+
+Requirements, if it ever has to be reconfigured: the DJI app (⚠️ **decline the
+staged 00.06.0521**), a WPA/WPA2-PSK network — WPA3 is a likely failure — with
+client isolation off, and a QR code held up to the robot's camera.
+
+### The direct-mode arrangement, kept for reference
+
+In WiFi Direct the robot serves its own AP with no uplink, so joining it costs
+all internet access. A USB CAT5 adapter solved that: **Ethernet carries the
+internet, Wi-Fi carries the robot.**
 
 | Interface | Service (order) | Role |
 |---|---|---|
@@ -81,7 +109,7 @@ Both connection modes tolerate this:
 - **Router mode**'s finder binds UDP `:45678` on the wildcard address, so it
   receives the robot's broadcasts on *any* interface.
 
-### ⚠️ The trap: never leave Wi-Fi on the house LAN
+### ⚠️ The trap, if you ever go back to direct mode: never leave Wi-Fi on the house LAN
 
 If Wi-Fi rejoins the house network while Ethernet is plugged in, **both
 interfaces land on `192.168.1.0/24` behind the same gateway** and macOS installs
@@ -165,6 +193,7 @@ GOPROXY=off ./scripts/build.sh
 ```
 cmd/s1teleop/      the browser console: bridge + governor + loop + HTTP (M3)
 cmd/s1probe/       the measurement harness: motion program, safety demo, report
+cmd/s1find/        broadcast discovery: is the robot on the network, and paired?
 internal/safety/   the governor — deadman, clamps, arming, e-stop (M2)
 internal/driver/   the 20 Hz control loop, behind a hardware-free Sink
 internal/teleop/   MJPEG hub, WebSocket, embedded UI
@@ -175,9 +204,10 @@ runs/              measurement JSON (gitignored)
 docs/              this file, and the ones below
 ```
 
-Two binaries. `s1teleop` is the real thing — it holds the bridge, runs the
+Three binaries. `s1teleop` is the real thing — it holds the bridge, runs the
 governor and the control loop, and serves the console. `s1probe` is the
 measurement tool that produced §6 and carries the hardware safety demo.
+`s1find` is the router-mode diagnostic.
 
 | Doc | What it is |
 |---|---|
@@ -216,23 +246,26 @@ bus is down — fine, because nothing in this repo needs it until M4.
 ## 6. Everyday commands
 
 ```bash
-# build both binaries
+# build all three binaries
 ./scripts/build.sh
+
+# where is the robot?
+./bin/s1find
 
 # tests
 go test -race ./...
 go test -cover ./internal/safety/ ./internal/driver/ ./internal/teleop/
 
-# drive it — Wi-Fi must be on the S1's AP
+# drive it — router mode is the default, no network juggling
 ./bin/s1teleop                      # console at http://localhost:8700
 ./bin/s1teleop -mock                # synthetic video, no robot needed
 ./bin/s1teleop -fps 10 -quality 60  # if the stream struggles
 
 # measure it
-./bin/s1probe -wifi-direct -connect-only
-./bin/s1probe -wifi-direct -video 60s -json runs/$(date +%Y%m%d-%H%M).json
-./bin/s1probe -wifi-direct -motion -video 45s      # drives the robot
-./bin/s1probe -wifi-direct -safety-demo            # proves the safety layer
+./bin/s1probe -connect-only
+./bin/s1probe -video 60s -json runs/$(date +%Y%m%d-%H%M).json
+./bin/s1probe -motion -video 45s      # drives the robot
+./bin/s1probe -safety-demo            # proves the safety layer
 ```
 
 Open the console in a **focused window**. Chrome throttles timers in hidden
@@ -266,3 +299,5 @@ vehicle — correct, but it looks like a fault if you do not know.
    obvious. Build stick positions only through `internal/stick.ToVirtual`.
 9. **A backgrounded browser tab stops the robot.** Chrome throttles hidden-tab
    timers to ~1 Hz, so the deadman fires. Working as intended.
+10. **The S1 ignores ICMP.** `ping` failing proves nothing about whether the
+    robot is up. Use `bin/s1find`, which listens for its broadcast.
