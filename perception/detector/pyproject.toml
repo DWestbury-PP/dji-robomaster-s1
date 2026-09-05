@@ -1,0 +1,14 @@
+[project]
+name = "s1detect"
+version = "0.1.0"
+description = "Fast-tier object detector for the RoboMaster S1 console"
+# Pinned below the newest Python on purpose: torch wheels lag, and a detector
+# that cannot install is worth less than one that is a version behind.
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "ultralytics>=8.3",
+    "requests>=2.32",
+]
+
+[tool.uv]
+package = false

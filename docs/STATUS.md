@@ -21,6 +21,7 @@ what it sees.
 | Control | 20 Hz rate commands, 250 ms deadman, live gears, e-stop |
 | Console | full-bleed cockpit, movable narration, drawer for everything else |
 | Observer | `gemma4:e4b` prose caption every 20 s, **1.6–3.7 s** per caption |
+| Detector | yolo11n on MPS, **7–17 ms** a frame, boxes drawn and logged |
 | Tests | 49 top-level (61 with subtests), race-clean |
 | Recording | on by default — `logs/drives/<timestamp>/` |
 
@@ -72,10 +73,10 @@ See ARCHITECTURE.md §7.
 | M3.6–3.8 — gears, cockpit UI, movable narration | ✅ done |
 | M4 — perception transport | ✅ done (DECISIONS.md #14) |
 | M4.1 — model bake-off | ✅ done — [BAKEOFF.md](BAKEOFF.md) |
-| M4.2 — fast tier: YOLO boxes | **next** |
+| M4.2 — fast tier: YOLO boxes | ✅ **done — 7–17 ms, boxes on the console** |
 | M4.3 — scene tier: `s1narrate` | ✅ **done — narrating live** |
 | M4.4 — the experience log | ✅ **done — recording every drive by default** |
-| M4.5 — advisory looming highlight | not started |
+| M4.5 — advisory looming highlight | **next** |
 | M5 — mobile app | not started |
 | ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
 
@@ -145,8 +146,8 @@ The S1 now joins the house network rather than serving its own AP.
 
 | | |
 |---|---|
-| Address | `192.168.1.39` (MAC `60:60:1f:cd:b8:66`) |
-| App ID | `4050813280395343415`, state **paired** |
+| Address | `192.168.1.x` (MAC `60:60:1f:xx:xx:xx` (DJI OUI)) |
+| App ID | `<your app id>`, state **paired** |
 | Announcement | UDP broadcast on `:45678`, about every 500 ms |
 
 **The DJI app is not needed to bring the robot up.** Measured with no app
@@ -202,7 +203,7 @@ change for them.
    on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
    design (ARCHITECTURE.md §6).
 3. ~~**Router mode, for range.**~~ **Resolved 2026-09-05 — adopted.** The S1 is
-   joined to the house network at `192.168.1.39`. It is **better on every
+   joined to the house network at `192.168.1.x`. It is **better on every
    measure that matters**, not merely more convenient: jitter fell ~7× and the
    p99 tail 3× against direct mode (ARCHITECTURE.md §6). Dual-homing is gone —
    one network for Redis, Ollama and the robot. Router mode is now the default

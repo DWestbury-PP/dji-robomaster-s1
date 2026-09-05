@@ -150,7 +150,7 @@ Optional, only with the vehicle on the floor and clear space:
   `ifconfig en1 | grep "inet "` — you should *not* see `192.168.1.x`.
 - In router mode: the S1 must be configured to join your LAN first, and needs a
   matching appID. `-appid 0` connects to the first robot found.
-- Your WireGuard VPN (`darrell`) was **disconnected** when checked. If you turn
+- Your WireGuard VPN was **disconnected** when checked. If you turn
   it on, a default-route VPN can swallow traffic to the robot. Leave it off.
 
 **`no frames received` but connect succeeded**

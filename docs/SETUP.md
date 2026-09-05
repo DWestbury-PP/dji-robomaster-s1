@@ -58,12 +58,13 @@ adapter, no interface juggling.
 
 | | |
 |---|---|
-| Robot | `192.168.1.39`, MAC `60:60:1f:cd:b8:66` |
-| App ID | `4050813280395343415`, paired |
+| Robot | `192.168.1.x`, MAC `60:60:1f:xx:xx:xx` (DJI OUI) |
+| App ID | `<your app id>`, paired |
 | Announces | UDP broadcast on `:45678`, ~every 500 ms |
 | Mac | ordinary Wi-Fi, single default route |
 
-Find it any time — this works when `ping` does not, because the S1 ignores ICMP:
+Your own robot's address, MAC and app ID come from `s1find`. This works when
+`ping` does not, because the S1 ignores ICMP:
 
 ```bash
 ./bin/s1find            # one-shot: is the robot on the network, and paired?
@@ -137,7 +138,7 @@ networksetup -setairportpower en1 on        # to join the robot
 Durable fix: turn **off Auto-Join for the house SSID** (System Settings → Wi-Fi
 → Details) so Wi-Fi only ever connects when deliberately pointed at the robot.
 
-Also: the WireGuard VPN (`darrell`) must stay **disconnected** during robot work.
+Also: any default-route VPN must stay **disconnected** during robot work.
 A default-route VPN swallows traffic to the S1.
 
 ---
