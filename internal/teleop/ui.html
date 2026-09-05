@@ -55,17 +55,34 @@
          overflow:hidden;flex:none}
   .meter i{display:block;height:100%;background:var(--ok);transition:width .6s ease,background .6s}
 
-  /* Narration: the observer speaking. Lower third, never over the horizon. */
-  #caption{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);
+  /* Narration: the observer speaking.
+     It sits at the TOP by default, which is the opposite of where captions
+     normally go. On a camera 20cm off the floor the bottom of the frame is the
+     nearest ground — the single most navigationally important region, and where
+     a low obstacle appears first. The upper band is ceiling and far wall.
+     Draggable anyway, because no default suits every room. */
+  #caption{position:fixed;left:50%;top:64px;transform:translateX(-50%);
            max-width:min(760px,86vw);padding:14px 20px;border-radius:16px;
            background:var(--glass);border:1px solid var(--edge);
            backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
            box-shadow:0 12px 40px rgba(0,0,0,.45);z-index:6;
+           cursor:grab;user-select:none;touch-action:none;
            opacity:0;transition:opacity .6s ease, transform .6s ease}
   #caption.show{opacity:1}
+  #caption.placed{transform:none}          /* dragged: left/top are absolute */
+  #caption.dragging{cursor:grabbing;transition:none;opacity:1}
+  #caption.hidden{display:none}
+  /* Once read, it stops competing with the view until the next caption. */
+  #caption.resting{opacity:.28}
+  #caption.resting:hover{opacity:1}
   #caption.fresh{animation:rise .6s ease}
-  @keyframes rise{from{opacity:0;transform:translateX(-50%) translateY(10px)}
+  @keyframes rise{from{opacity:0;transform:translateX(-50%) translateY(-10px)}
                   to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  #caption.placed.fresh{animation:risePlaced .6s ease}
+  @keyframes risePlaced{from{opacity:0;transform:translateY(-10px)}
+                        to{opacity:1;transform:none}}
+  #capGrip{position:absolute;top:6px;left:50%;transform:translateX(-50%);
+           width:26px;height:3px;border-radius:2px;background:rgba(255,255,255,.18)}
   #capText{font:400 16px/1.55 var(--ui);letter-spacing:.005em}
   #capMeta{margin-top:7px;font:11px var(--mono);color:var(--dim);
            display:flex;gap:10px;align-items:center}
@@ -148,7 +165,8 @@
   <span class="chip"><span class="dot" id="linkDot"></span><span id="linkTxt">—</span></span>
 </div>
 
-<div id="caption">
+<div id="caption" title="Drag to move · double-click to reset · N to hide">
+  <div id="capGrip"></div>
   <div id="capText"></div>
   <div id="capMeta">
     <span id="capAge">—</span>
@@ -161,7 +179,8 @@
 <div id="hint" class="chrome">
   <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp;·&nbsp;
   <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> turret &nbsp;·&nbsp;
-  <kbd>[</kbd><kbd>]</kbd> gear &nbsp;·&nbsp; <kbd>tab</kbd> panel &nbsp;·&nbsp; <kbd>esc</kbd> stop
+  <kbd>[</kbd><kbd>]</kbd> gear &nbsp;·&nbsp; <kbd>n</kbd> narration &nbsp;·&nbsp;
+  <kbd>tab</kbd> panel &nbsp;·&nbsp; <kbd>esc</kbd> stop
 </div>
 
 <button id="estop" title="Emergency stop (Esc)"><span class="sq"></span>STOP</button>
@@ -191,6 +210,20 @@
       <button class="btn" id="bTurretDown">turret −</button>
       <button class="btn" id="bTurretUp">turret +</button>
     </div>
+  </section>
+
+  <section>
+    <h2>Narration</h2>
+    <div class="row" style="grid-template-columns:1fr">
+      <button class="btn" id="bNarr">Hide narration</button>
+    </div>
+    <div class="row" style="grid-template-columns:1fr">
+      <button class="btn" id="bNarrReset">Reset position</button>
+    </div>
+    <p style="font:11px var(--ui);color:var(--dim);margin:9px 0 0">
+      Drag the caption anywhere. It sits at the top by default because the
+      bottom of a floor-level view is the ground you are about to drive over.
+    </p>
   </section>
 
   <section>
@@ -263,6 +296,7 @@
     if (e.code === "Escape")  { send({type:"estop"}); return; }
     if (e.code === "Tab")     { e.preventDefault(); $("drawer").classList.toggle("open"); return; }
     if (e.code === "Space")   { e.preventDefault(); fire(); return; }
+    if (e.key === "n" || e.key === "N") { toggleNarration(); return; }
     if (e.key === "[") return setGear("drive", -1);
     if (e.key === "]") return setGear("drive", +1);
     if (e.key === ",") return setGear("turret", -1);
@@ -418,6 +452,85 @@
   let perception = {}, lastCaption = "";
   const BOX_FRESH = 150, BOX_STALE = 600;
 
+  // ---- caption placement, visibility and resting --------------------------
+  const capEl = $("caption");
+  let capHidden = false, restTimer = null;
+
+  try {
+    capHidden = localStorage.getItem("capHidden") === "1";
+    const pos = JSON.parse(localStorage.getItem("capPos") || "null");
+    if (pos) placeCaption(pos.x, pos.y);
+  } catch {}
+  if (capHidden) capEl.classList.add("hidden");
+
+  function placeCaption(x, y) {
+    const r = capEl.getBoundingClientRect();
+    const w = r.width || 400, h = r.height || 90;
+    // Keep it on screen whatever the window does between sessions.
+    x = Math.max(8, Math.min(innerWidth  - w - 8, x));
+    y = Math.max(8, Math.min(innerHeight - h - 8, y));
+    capEl.classList.add("placed");
+    capEl.style.left = `${x}px`;
+    capEl.style.top  = `${y}px`;
+    capEl.style.bottom = "auto";
+  }
+
+  function resetCaption() {
+    capEl.classList.remove("placed");
+    capEl.style.left = ""; capEl.style.top = ""; capEl.style.bottom = "";
+    try { localStorage.removeItem("capPos"); } catch {}
+  }
+
+  function toggleNarration(on) {
+    capHidden = on === undefined ? !capHidden : !on;
+    capEl.classList.toggle("hidden", capHidden);
+    $("bNarr").textContent = capHidden ? "Show narration" : "Hide narration";
+    try { localStorage.setItem("capHidden", capHidden ? "1" : "0"); } catch {}
+  }
+
+  let dragging = false, grabX = 0, grabY = 0;
+  capEl.addEventListener("pointerdown", e => {
+    dragging = true;
+    const r = capEl.getBoundingClientRect();
+    grabX = e.clientX - r.left; grabY = e.clientY - r.top;
+    capEl.setPointerCapture(e.pointerId);
+    capEl.classList.add("dragging");
+    capEl.classList.remove("resting");
+  });
+  capEl.addEventListener("pointermove", e => {
+    if (dragging) placeCaption(e.clientX - grabX, e.clientY - grabY);
+  });
+  capEl.addEventListener("pointerup", e => {
+    if (!dragging) return;
+    dragging = false;
+    capEl.releasePointerCapture(e.pointerId);
+    capEl.classList.remove("dragging");
+    const r = capEl.getBoundingClientRect();
+    try { localStorage.setItem("capPos", JSON.stringify({x:r.left, y:r.top})); } catch {}
+    rest();
+  });
+  capEl.addEventListener("dblclick", resetCaption);
+  addEventListener("resize", () => {
+    if (capEl.classList.contains("placed")) {
+      const r = capEl.getBoundingClientRect();
+      placeCaption(r.left, r.top);
+    }
+  });
+
+  // After it has been read, the caption steps back rather than occluding the
+  // view for the rest of the cycle. Hovering brings it straight back.
+  function rest() {
+    clearTimeout(restTimer);
+    capEl.classList.remove("resting");
+    restTimer = setTimeout(() => {
+      if (!dragging) capEl.classList.add("resting");
+    }, 9000);
+  }
+
+  $("bNarr").onclick      = () => toggleNarration();
+  $("bNarrReset").onclick = resetCaption;
+  toggleNarration(!capHidden);
+
   function renderPerception(p) {
     perception = p || {};
     const f = perception.fast;
@@ -437,10 +550,11 @@
       lastCaption = s.text;
       $("capText").textContent = s.text;
       $("capModel").textContent = s.model || "";
-      const cap = $("caption");
-      cap.classList.add("show"); cap.classList.remove("fresh");
-      void cap.offsetWidth;            // restart the animation
-      cap.classList.add("fresh");
+      capEl.classList.add("show");
+      capEl.classList.remove("fresh", "resting");
+      void capEl.offsetWidth;            // restart the animation
+      capEl.classList.add("fresh");
+      rest();
     }
     if (s.text) {
       // The caption describes a frame from seconds ago. Say so, always — beside
