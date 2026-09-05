@@ -29,6 +29,7 @@ import (
 	"github.com/brunoga/robomaster/support/logger"
 
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/driver"
+	"github.com/DWestbury-PP/dji-robomaster-s1/internal/experience"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/safety"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/stick"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/teleop"
@@ -44,6 +45,9 @@ var (
 	maxGimbal  = flag.Float64("max-gimbal", 0.70, "Hard ceiling on gimbal deflection. The console can scale down from this but never past it.")
 	speedLevel = flag.String("speed-level", "slow", "Robot-side chassis gear: slow, medium or fast. Startup only — it changes metres per second for the same deflection, so it is the operator's call, not the browser's.")
 	deadman    = flag.Duration("deadman", 250*time.Millisecond, "Stop the vehicle after this much producer silence.")
+	logDir     = flag.String("log", "logs/drives", "Record every drive here. Empty disables recording — but see DECISIONS.md #15: frames can be regenerated later, what the operator did cannot.")
+	logFPS     = flag.Float64("log-fps", 3, "Frames per second written to the drive log. Enough for demonstration data without filling the disk.")
+	logNote    = flag.String("log-note", "", "Free-text note stored in the drive's manifest.")
 	mock       = flag.Bool("mock", false, "Run with no robot: synthetic video and a sink that discards. For working on the UI.")
 	verbose    = flag.Bool("v", false, "Verbose bridge logging.")
 )
@@ -70,9 +74,10 @@ func main() {
 	defer cancel()
 
 	var (
-		sink     driver.Sink
-		statusFn func() teleop.Status
-		cleanup  func()
+		sink       driver.Sink
+		statusFn   func() teleop.Status
+		cleanup    func()
+		superviseC *robomaster.Client
 	)
 
 	if *mock {
@@ -91,16 +96,38 @@ func main() {
 		statusFn = st
 		cleanup = clean
 		go pumpVideo(c, hub)
-		go superviseLink(ctx, c, gov, log)
+		superviseC = c
 	}
 	if cleanup != nil {
 		defer cleanup()
+	}
+
+	// Record the drive. This is the only part of the system with a deadline:
+	// frames and captions can be regenerated from a corpus by re-running a
+	// model, but what the operator did while looking at a given frame exists
+	// only if it is captured now (DECISIONS.md #15).
+	var rec *experience.Recorder
+	if *logDir != "" {
+		r, err := experience.New(*logDir, *logNote)
+		if err != nil {
+			log.Warn("drive recording disabled", "err", err)
+		} else {
+			rec = r
+			defer rec.Close()
+			log.Info("recording drive", "dir", rec.Dir())
+			go recordFrames(ctx, hub, rec, *logFPS)
+		}
 	}
 
 	srv := teleop.New(teleop.Config{
 		Addr: *addr, StreamFPS: *streamFPS, Quality: *quality,
 		StatusFn: statusFn, Log: log,
 	}, gov, hub)
+	srv.SetRecorder(rec)
+
+	if superviseC != nil {
+		go superviseLink(ctx, superviseC, gov, log, rec)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -129,7 +156,13 @@ func main() {
 	fmt.Printf("  ceilings: chassis %.2f · gimbal %.2f · gear %s · deadman %s\n",
 		*maxChassis, *maxGimbal, *speedLevel, *deadman)
 	fmt.Printf("            the console scales down from these; it cannot exceed them\n")
-	fmt.Printf("  video:    %d fps, quality %d\n\n", *streamFPS, *quality)
+	fmt.Printf("  video:    %d fps, quality %d\n", *streamFPS, *quality)
+	if rec != nil {
+		fmt.Printf("  logging:  %s at %.0f fps\n", rec.Dir(), *logFPS)
+	} else {
+		fmt.Printf("  logging:  OFF — this drive is not being recorded\n")
+	}
+	fmt.Println()
 
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("http server", "err", err)
@@ -252,7 +285,8 @@ func applySessionSetup(c *robomaster.Client, log *slog.Logger) {
 // ARCHITECTURE.md §5.5 specifies and which nothing was previously wiring.
 // Regaining it re-applies session setup, because a rebooted vehicle has
 // forgotten that movement control was ever enabled.
-func superviseLink(ctx context.Context, c *robomaster.Client, gov *safety.Governor, log *slog.Logger) {
+func superviseLink(ctx context.Context, c *robomaster.Client, gov *safety.Governor,
+	log *slog.Logger, rec *experience.Recorder) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
@@ -268,6 +302,11 @@ func superviseLink(ctx context.Context, c *robomaster.Client, gov *safety.Govern
 			}
 			was = now
 
+			if rec != nil {
+				pct, _ := safeBattery(c)
+				rec.Vehicle(now, int(pct))
+			}
+
 			if !now {
 				log.Warn("robot link lost — stopping and disarming")
 				gov.SetLinkDown(true)
@@ -280,6 +319,33 @@ func superviseLink(ctx context.Context, c *robomaster.Client, gov *safety.Govern
 			applySessionSetup(c, log)
 			gov.SetLinkDown(false)
 			log.Info("movement control re-enabled after reconnect")
+		}
+	}
+}
+
+// recordFrames samples the encoded stream into the drive log. It reuses the
+// frames already encoded for the browser rather than encoding again — at
+// 23.6 ms a frame, a second encode would be the most expensive thing in the
+// process (ARCHITECTURE.md §6).
+func recordFrames(ctx context.Context, hub *teleop.FrameHub, rec *experience.Recorder, fps float64) {
+	if fps <= 0 {
+		return
+	}
+	ticker := time.NewTicker(time.Duration(float64(time.Second) / fps))
+	defer ticker.Stop()
+
+	var lastSeq uint64
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			f, ok := hub.Newest()
+			if !ok || f.Seq == lastSeq {
+				continue // nothing new; a parked robot should not pad the log
+			}
+			lastSeq = f.Seq
+			rec.Frame(f.Seq, f.CapturedAt, f.JPEG)
 		}
 	}
 }

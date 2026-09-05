@@ -21,7 +21,8 @@ what it sees.
 | Control | 20 Hz rate commands, 250 ms deadman, live gears, e-stop |
 | Console | full-bleed cockpit, movable narration, drawer for everything else |
 | Observer | `gemma4:e4b` prose caption every 20 s, **1.6–3.7 s** per caption |
-| Tests | 41 top-level (53 with subtests), race-clean |
+| Tests | 49 top-level (61 with subtests), race-clean |
+| Recording | on by default — `logs/drives/<timestamp>/` |
 
 **Nothing a model produces actuates anything** (DECISIONS.md #15). Motion is
 entirely manual.
@@ -73,7 +74,7 @@ See ARCHITECTURE.md §7.
 | M4.1 — model bake-off | ✅ done — [BAKEOFF.md](BAKEOFF.md) |
 | M4.2 — fast tier: YOLO boxes | **next** |
 | M4.3 — scene tier: `s1narrate` | ✅ **done — narrating live** |
-| M4.4 — the experience log | not started — the one-way door, see below |
+| M4.4 — the experience log | ✅ **done — recording every drive by default** |
 | M4.5 — advisory looming highlight | not started |
 | M5 — mobile app | not started |
 | ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
@@ -179,12 +180,18 @@ decide at all. What survives is #16: the scene tier narrates in free prose from
 a **local** model, which is what these models were always good at — and dropping
 the schema roughly **halved** the latency as well.
 
-## The one-way door
+## The one-way door — now closed
 
-**M4.4 (the experience log) is the only item with a deadline.** Frames and
-detections can be regenerated from a corpus at any time. *What the operator did
-while looking at a given frame* exists only if captured at that moment. Every
-drive before M4.4 is demonstration data that cannot be recovered.
+**M4.4 shipped, and recording is on by default.** Every drive since
+2026-09-05 writes `logs/drives/<timestamp>/` with frames, narration, vehicle
+state and — the irreplaceable part — the operator's control inputs, logging
+both what was *requested* and what the governor *allowed*.
+
+A policy trained on the applied values alone would learn the clamp rather than
+the driver, which is why both sides are kept.
+
+Detections join the same log when M4.2 lands; nothing about the format needs to
+change for them.
 
 ## Open questions
 
