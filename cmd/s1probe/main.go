@@ -31,6 +31,7 @@ import (
 	"github.com/brunoga/robomaster/module/camera"
 	"github.com/brunoga/robomaster/module/gimbal"
 	"github.com/brunoga/robomaster/support/logger"
+	"github.com/brunoga/robomaster/unitybridge/unity/key"
 
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/probe"
 )
@@ -115,7 +116,7 @@ func main() {
 	fmt.Printf("connected in %.0f ms\n", rep.ConnectMs)
 
 	rep.Notes = append(rep.Notes,
-		fmt.Sprintf("battery %d%% at start", c.Robot().BatteryPowerPercent()),
+		"battery at start: "+batteryString(c),
 		fmt.Sprintf("devices: %v", c.Robot().Devices()))
 
 	if *connectOnly {
@@ -124,22 +125,34 @@ func main() {
 	}
 
 	// ---- Phase 2: control-plane RTT ---------------------------------------
-	// ChassisSpeedLevel() is a synchronous get that round-trips to the vehicle,
-	// so it measures the request/response path without moving anything. This is
-	// a lower bound on key-to-motion: actuation adds mechanical delay that no
-	// amount of software timing can see.
+	// Robot.ChassisSpeedLevel() calls GetKeyValueSync(k, useCache=true), which
+	// returns a cached value without touching the network — it measures a map
+	// lookup, not the link. We go to the bridge directly with useCache=false to
+	// force a real request/response, and keep the cached path as a control so
+	// the difference between the two is visible in the report.
+	//
+	// Even forced, this is a LOWER BOUND on key-to-motion: actuation adds
+	// mechanical delay no software timing can see (docs/M1.md).
 	fmt.Printf("measuring control-plane RTT (%d samples)...\n", *rttSamples)
-	rtt := probe.NewSeries("control_plane_rtt")
+	rtt := probe.NewSeries("control_plane_rtt_wire")
+	cached := probe.NewSeries("control_plane_cached")
+	ub := c.Robot().UB()
 	for i := 0; i < *rttSamples; i++ {
 		s := time.Now()
-		if _, err := c.Robot().ChassisSpeedLevel(); err != nil {
-			rep.Notes = append(rep.Notes, fmt.Sprintf("rtt sample %d failed: %v", i, err))
-			continue
+		if _, err := ub.GetKeyValueSync(key.KeyRobomasterSystemChassisSpeedLevel, false); err != nil {
+			rep.Notes = append(rep.Notes, fmt.Sprintf("wire rtt sample %d failed: %v", i, err))
+		} else {
+			rtt.Add(time.Since(s))
 		}
-		rtt.Add(time.Since(s))
+
+		s = time.Now()
+		if _, err := c.Robot().ChassisSpeedLevel(); err == nil {
+			cached.Add(time.Since(s))
+		}
+
 		time.Sleep(50 * time.Millisecond)
 	}
-	rep.Series = append(rep.Series, rtt.Summary())
+	rep.Series = append(rep.Series, rtt.Summary(), cached.Summary())
 
 	// ---- Phase 3: actuation probe -----------------------------------------
 	if err := actuationProbe(c, rep, *allowChass); err != nil {
@@ -152,7 +165,7 @@ func main() {
 		return
 	}
 
-	rep.Notes = append(rep.Notes, fmt.Sprintf("battery %d%% at end", c.Robot().BatteryPowerPercent()))
+	rep.Notes = append(rep.Notes, "battery at end: "+batteryString(c))
 	rep.Incomplete = false
 }
 
@@ -303,6 +316,37 @@ func cpuUsage(wallStart time.Time) probe.CPU {
 		cores = (user + sys) / wall
 	}
 	return probe.CPU{UserSec: user, SystemSec: sys, WallSec: wall, CoresBusy: cores}
+}
+
+// safeBattery reads the battery percentage defensively. Upstream's
+// BatteryPowerPercent dereferences an atomic pointer that stays nil until the
+// robot pushes its first battery event, so calling it too early panics. We poll
+// briefly and recover rather than crash a measurement run over a nice-to-have.
+func safeBattery(c *robomaster.Client) (pct uint8, ok bool) {
+	read := func() (p uint8, good bool) {
+		defer func() {
+			if recover() != nil {
+				p, good = 0, false
+			}
+		}()
+		return c.Robot().BatteryPowerPercent(), true
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if p, good := read(); good {
+			return p, true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return 0, false
+}
+
+func batteryString(c *robomaster.Client) string {
+	if pct, ok := safeBattery(c); ok {
+		return fmt.Sprintf("%d%%", pct)
+	}
+	return "unavailable (robot had not pushed a battery event yet)"
 }
 
 func fatal(rep *probe.Report, format string, args ...any) {
