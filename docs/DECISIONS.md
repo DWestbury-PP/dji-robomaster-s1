@@ -446,3 +446,34 @@ the observer has actually gone quiet.
 
 **Fast tiers keep the absolute scale**, because for a detector old genuinely is
 broken.
+
+---
+
+### 19. On a floor-level camera, the bottom of the frame is not UI space
+
+**Decision.** The narration caption defaults to the **top** of the view, is
+draggable to anywhere, remembers where it was put, hides with <kbd>N</kbd>, and
+steps back to low opacity nine seconds after arriving.
+
+**Why.** Conventional video puts captions in the lower third because that band
+is usually the least informative. A camera 20 cm off the floor inverts that
+completely: **the bottom of the frame is the nearest ground** — the region where
+a low obstacle first appears and the one an operator most needs while driving.
+The original placement was covering exactly the thing the driver was steering
+around.
+
+This is the same class of surprise as the gel blaster barrel in every frame
+(#12 era): a floor-level viewpoint breaks assumptions that hold for every other
+kind of video, and the only reliable way to find those assumptions is to put the
+robot on the floor and look.
+
+**Why all four behaviours and not just one.** Draggable alone would make every
+operator fix the same bad default by hand. A better default alone would fail the
+room where the ceiling is the interesting part. Resting opacity means the
+caption stops competing for the rest of the cycle without anybody having to act,
+and hovering brings it straight back. Hiding entirely is there because
+narration is an observer, never a requirement (#15) — nothing breaks without it.
+
+**General rule this implies.** Any overlay added to this console must justify
+what it occludes at floor level, not at eye level. When in doubt, put it up
+top and let it be moved.
