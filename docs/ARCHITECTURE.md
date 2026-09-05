@@ -249,12 +249,20 @@ numbers. This one does not.
 [x] M2 — Safety layer in Go with tests (deadman, clamps, arming, e-stop)
         └ hardware proof via `s1probe -safety-demo` still outstanding
 [x] M3 — Browser teleop at :8700: WASD/gamepad, MJPEG view, telemetry HUD, e-stop
-[ ] M4 — publishing `frames`; foveate narrates the robot's view
-        └ blocked on foveate's own M8 (multi-camera)
-[ ] M5 — Intentions schema, designed jointly with foveate M10
-[ ] M6 — Closed-loop autonomy v1: navigate by obstacle class from `fusion`
-[ ] M7 — Mobile app — decide then whether it goes through the Mac or talks to
+[x] M4 — Perception transport: cadence-matched frame access, dated observations
+[x] M4.1 — Model bake-off on a real corpus; scene tier chosen on evidence
+[ ] M4.2 — Fast tier: YOLO boxes to the console. Visualisation and logging only
+[ ] M4.3 — Scene tier: periodic narration from the chosen model
+[ ] M4.4 — The experience log: frames + detections + narration + OPERATOR INPUT,
+           time-aligned. The demonstration corpus (DECISIONS.md #15)
+[ ] M4.5 — Advisory looming highlight in the console, wired to nothing
+[ ] M5 — Mobile app — decide then whether it goes through the Mac or talks to
          the S1 directly via brunoga/robomaster-mobile (gomobile)
+
+    Deferred, not abandoned (DECISIONS.md #15):
+    · reflex veto clamping the governor — needs depth or a calibrated ground plane
+    · intentions schema and closed-loop autonomy — needs a model fast and
+      spatially reliable enough to trust, which does not currently exist
 ```
 
 M1 was a measurement milestone rather than a feature, and it earned its place:

@@ -50,6 +50,8 @@ type Server struct {
 
 	cmdCount atomic.Uint64
 	viewers  atomic.Int64
+
+	perception *perceptionStore
 }
 
 func New(cfg Config, gov *safety.Governor, hub *FrameHub) *Server {
@@ -59,7 +61,7 @@ func New(cfg Config, gov *safety.Governor, hub *FrameHub) *Server {
 	if cfg.StreamFPS <= 0 {
 		cfg.StreamFPS = 15
 	}
-	s := &Server{cfg: cfg, gov: gov, hub: hub, log: cfg.Log}
+	s := &Server{cfg: cfg, gov: gov, hub: hub, log: cfg.Log, perception: newPerceptionStore()}
 	s.lastReason.Store(safety.ReasonNoCommand)
 	return s
 }
@@ -77,6 +79,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleUI)
 	mux.HandleFunc("GET /stream", s.handleStream)
 	mux.HandleFunc("GET /ws", s.handleWS)
+	mux.HandleFunc("GET /frame.jpg", s.handleFrame)
+	mux.HandleFunc("POST /perception", s.handlePerception)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
@@ -164,6 +168,9 @@ type telemetry struct {
 	Viewers    int64   `json:"viewers"`
 	MaxChassis float64 `json:"maxChassis"`
 	MaxGimbal  float64 `json:"maxGimbal"`
+	// Perception is the newest observation per tier, each dated so the console
+	// can show how old it is rather than implying it is current.
+	Perception map[string]dated `json:"perception,omitempty"`
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
@@ -293,6 +300,7 @@ func (s *Server) writeLoop(ctx context.Context, c *websocket.Conn) {
 				Viewers:    s.viewers.Load(),
 				MaxChassis: cfg.MaxChassis,
 				MaxGimbal:  cfg.MaxGimbal,
+				Perception: s.perception.snapshot(),
 			}
 
 			b, err := json.Marshal(t)

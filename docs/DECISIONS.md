@@ -276,3 +276,88 @@ encoding alone.
 
 **Revisit if.** A second consumer needs the same video, or the console has to be
 reachable from somewhere the driver process is not.
+
+---
+
+### 14. Perception talks HTTP to the driver, not Redis
+
+**Decision.** Tiers pull frames from `s1teleop` over HTTP — `/stream` for
+consumers that keep up, `/frame.jpg` for those that do not — and post results
+back to `/perception`. No broker, no disk frame store.
+
+**Why.** The bus exists to stop a slow consumer gating a fast one and to share
+pixels between processes. We get the first from `FrameHub`, which already lets
+each consumer take the newest frame independently while the encoder waits on
+nobody. We do not need the second: the frames are already encoded once for the
+browser, so a bus route would pay the 23.6 ms encode twice and add a disk round
+trip, on a robot that otherwise needs neither Docker nor Redis.
+
+**The part that is not obvious.** Push and pull are not interchangeable here. A
+pushed stream buffers frames in the socket while a slow tier thinks, so an 8.5 s
+model would reason about a scene from 8 seconds ago — the exact coupling the bus
+was meant to remove, smuggled back in by the transport. Slow tiers must pull.
+
+**What this costs.** Replay, durability and consumer groups. Fine today; if we
+want to re-run a model over a recorded drive, a broker earns its place, and the
+observation schema is what we would replay into it.
+
+**Not adopted from foveate, deliberately.** Its capture service (we have the
+camera), its frame store (we have the frames), its monitor (we have a better
+console), and its process-per-tier stack. **Adopted:** the tiering idea, the
+fusion principle, the schema vocabulary, and above all its **benchmarks** —
+which are why we start from yolo11s on ONNX/CoreML and qwen2.5vl:7b rather than
+re-deriving both.
+
+**Revisit if.** Perception moves to another host and needs reconnect semantics,
+or we want recorded drives replayed through new models.
+
+---
+
+### 15. Perception observes; the human drives
+
+**Decision.** Models describe the world and log what they see. **No model output
+actuates anything.** Motion, aiming and firing stay entirely manual. The reflex
+veto (#- see M4.5 in the roadmap) is deferred, not abandoned.
+
+**Why — measured, not assumed.** The 2026-09-05 bake-off (docs/BAKEOFF.md)
+established three things on our own frames:
+
+1. Every scene model takes **5–8 s**, hosted or local. Nothing at that latency
+   belongs in a control loop on a vehicle that crosses a room in four seconds.
+2. Local models produce **schema-valid nonsense on exactly the actionable
+   fields** — `clear_path: ahead` on a frame the same model just described as
+   obstructed. Hosted models are far better but still not something to hand
+   control to unreviewed.
+3. **We have no depth.** Distance would have to come from box area and growth
+   rate. A proxy that is wrong while the robot is moving is worse than no
+   estimate at all.
+
+**Point 3 is the one that matters most, and it is worth stating precisely:**
+what blocks automated movement triggers is **geometry, not detection quality**.
+A detector may well be excellent at "there is a chair, here" — that is untested
+as of this decision. It still cannot tell us how far away the chair is. So a
+better detector does not unlock triggers; a depth sensor or a calibrated ground
+plane would.
+
+**What we get instead, and why it is not a consolation prize.** Every drive
+logs frames, detections, scene descriptions **and the operator's control
+inputs**, time-aligned. That is demonstration data: *this is what a competent
+human did, given this view*. It is the corpus needed to train, evaluate or
+fine-tune a control policy when the state of the art is ready — and it is
+exactly the kind of asset that cannot be bought, because it is this robot in
+this house.
+
+The bake-off already proved the pattern at small scale: 250 frames from one
+drive settled a model choice that no published benchmark could have. Observer
+mode is how we earn the right to automate later.
+
+**Middle ground that is permitted.** The console may highlight detections
+*advisorily* — a box drawn red when it is large and growing — wired to nothing.
+That calibrates the looming heuristic against reality over weeks of real
+driving, which is the evidence any future veto would need before touching the
+governor.
+
+**Revisit when.** Any of: a depth sensor is added; a model with sub-second
+latency and reliable spatial output appears (re-run the bake-off, that is what
+it is for); or the logged corpus is large enough to train a policy worth
+evaluating.

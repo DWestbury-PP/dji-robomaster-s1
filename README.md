@@ -85,4 +85,5 @@ stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
 | [docs/M1.md](docs/M1.md) | The latency milestone: what was measured, and what cannot be |
 | [docs/M1-RUNBOOK.md](docs/M1-RUNBOOK.md) | Offline field card for working with the robot |
 | [docs/M3.md](docs/M3.md) | The browser console: running it, controls, what it measures |
+| [docs/M4.md](docs/M4.md) | Perception transport: cadence classes, and why observations are dated |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |
