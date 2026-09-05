@@ -2,7 +2,8 @@
 
 > The living progress log. Read this + [ARCHITECTURE.md](ARCHITECTURE.md)
 > to resume work. Rationale: [DECISIONS.md](DECISIONS.md). Transport paths and
-> firmware triage: [HARDWARE.md](HARDWARE.md). Current milestone: [M1.md](M1.md).
+> firmware triage: [HARDWARE.md](HARDWARE.md). Environment, network and
+> toolchain: [SETUP.md](SETUP.md). Current milestone: [M1.md](M1.md).
 > Investigations:
 > [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
