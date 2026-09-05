@@ -8,3 +8,10 @@ data/
 bin/
 log/
 corpus/
+
+# macOS and sync tools create byte-identical "name 2.ext" copies. Go compiles
+# any .go file in a package directory regardless of the name, so a stray copy
+# is a redeclaration error rather than a harmless duplicate.
+* [0-9].go
+*\ copy.go
+*\ copy\ *.go
