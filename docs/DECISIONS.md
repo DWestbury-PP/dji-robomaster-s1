@@ -206,3 +206,36 @@ blockers (SPIKE-arm64-bridge.md §6).
 **Revisit if.** M1 shows decode under Rosetta is a material share of the
 glass-to-glass budget, or macOS 27 lands on this machine (#10). The spike doc is
 the head start.
+
+---
+
+### 12. Movement goes through `Controller.Move`, not `Chassis.SetSpeed`
+
+**Decision.** All chassis motion is issued as virtual-stick input via
+`Controller.Move(chassisStick, gimbalStick, ModeFPV)` — the path the DJI mobile
+app itself uses (`KeyMainControllerVirtualStick`) — refreshed continuously at
+~20 Hz. `Chassis.SetSpeed()` is not used.
+
+**Why.** The S1 silently ignores `Chassis.SetSpeed()`. It writes a different key,
+and because the underlying `DirectSendKeyValue` is **fire-and-forget with no
+acknowledgement**, the call returns `nil` whether or not the robot does anything.
+A full motion run reported 39 successful legs while the vehicle sat still; only
+the operator watching it caught the discrepancy.
+
+**Two things this costs us, permanently:**
+
+1. **Stick values are fractions of full deflection in [-1, 1], not m/s.** Speed
+   limiting is a deflection clamp plus the chassis speed level, not a velocity
+   in physical units. The safety layer's "speed clamp" (§5) must be written in
+   those terms.
+2. **No command is ever acknowledged.** We cannot confirm from software that the
+   robot acted. Any future claim that a command took effect must come from
+   telemetry or from a human, never from a nil error.
+
+**The compensation.** The vehicle *watchdogs* the virtual stick: a single send
+does nothing, and motion stops when the stream lapses. That is the hardware
+independently enforcing #3 — rate commands under a deadman is not merely our
+safety preference, it is the only thing the robot responds to.
+
+**Revisit if.** We move to Path C, where we own the wire and can have real
+acknowledgements.

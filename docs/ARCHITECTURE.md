@@ -156,22 +156,30 @@ key-to-motion needs the external method (docs/M1.md).
 
 ### Under motion — the pass that mattered
 
-Repeated with a bounded motion exercise running *during* sampling: rotation in
-place, sub-metre translations in each direction including Mecanum strafes,
-gimbal sweeps and infrared fire — 39 legs over 44 s (`runs/direct-03-motion.json`).
+Bounded exercise running *during* sampling: forward/back, Mecanum strafes both
+ways, 360° rotation, gimbal sweeps and infrared fire — 31 legs over 45 s,
+**visually confirmed by the operator** (`runs/direct-05-motion-real.json`).
 
-| Metric | Stationary | **Under motion** |
+| Metric | Stationary | **Under full motion** |
 |---|---|---|
-| Throughput | 30.1 fps | **30.1 fps** |
+| Throughput | 30.1 fps | **30.0 fps** |
 | Frame interval p50 | 33.0 ms | **33.0 ms** |
-| p95 | 63.9–68.2 ms | **63.9 ms** |
-| p99 | 126.7–129.4 ms | **126.6 ms** |
-| Jitter (σ) | 23.1–29.3 ms | **21.9 ms** |
-| Process CPU | 0.20–0.25 cores | **0.24 cores** |
+| p95 | 63.9–68.2 ms | **65.5 ms** |
+| p99 | 126.7–129.4 ms | **121.8 ms** |
+| Jitter (σ) | 23.1–29.3 ms | **24.7 ms** |
+| Process CPU | 0.20–0.25 cores | **0.25 cores** |
 
-**Motion does not degrade the link.** Jitter under motion was marginally *lower*
-than stationary — inside the noise, but unambiguously not worse. The risk this
-milestone existed to find is not there.
+**Motion does not degrade the link.** Drive motors under load, the chassis
+rotating through 360°, and the antenna continuously changing orientation moved
+nothing outside the stationary range. The risk this milestone existed to find is
+not there.
+
+> **An earlier run (`runs/direct-03-motion.json`) reported the same conclusion
+> and was not valid evidence for it.** The chassis never moved: commands went to
+> `Chassis.SetSpeed()`, which the S1 ignores, and `DirectSendKeyValue` is
+> fire-and-forget so nothing errored. Only the gimbal was moving. The conclusion
+> survived re-testing, but it was not earned until the run above. See
+> DECISIONS.md #12.
 
 That also reinterprets the burstiness. It is identical moving and still, so it
 is **not the radio**: it is the decoder/bridge delivering frames in batches. The

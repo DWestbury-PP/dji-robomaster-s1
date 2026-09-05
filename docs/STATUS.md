@@ -62,9 +62,13 @@ Wi-Fi for the robot). Numbers in ARCHITECTURE.md §6; raw runs in `runs/`.
 
 - ✅ **Rosetta is a non-issue.** 30.1 fps at 1280×720, zero deficit, 0.24 cores.
   DECISIONS.md #11 stays deferred on evidence.
-- ✅ **Motion does not degrade the link.** 39 legs of rotation, translation,
-  strafes, gimbal sweeps and infrared fire changed nothing; jitter was slightly
-  lower than stationary.
+- ✅ **Motion does not degrade the link.** 31 legs of forward/back, Mecanum
+  strafes, 360° rotation, gimbal sweeps and infrared fire — operator-confirmed —
+  left every figure inside the stationary range.
+- ⚠️ **`Chassis.SetSpeed()` silently does nothing on the S1.** Movement goes
+  through `Controller.Move` (virtual stick) at ~20 Hz. Commands are never
+  acknowledged, so a nil error proves nothing (DECISIONS.md #12). An earlier
+  "motion" run measured a stationary chassis before this was caught.
 - ✅ **All 16 devices enumerate**, including Chassis, Gimbal, Camera and WaterGun.
 - ⚠️ **Control-plane RTT is not observable through this bridge.** Even with
   `useCache=false` the library answers from its own state in 0.2 ms. Recorded as
