@@ -1,0 +1,237 @@
+# The working setup
+
+Everything about *this environment* — the machines, the network, the toolchain
+and the traps — in one place. Verified 2026-09-04.
+
+For the field procedure with the robot in front of you, use
+[M1-RUNBOOK.md](M1-RUNBOOK.md). This document is the reference; that one is the
+card you read when the Mac has no internet.
+
+---
+
+## 1. Hardware
+
+### The vehicles
+
+Two DJI RoboMaster S1s, shelf-retired for ~2 years, now the movement platform.
+
+| | Vehicle 1 | Vehicle 2 |
+|---|---|---|
+| Active firmware | **00.06.0518** | **00.06.0518** |
+| Staged firmware | 00.06.0521 | 00.06.0521 |
+| State | in use, unmodified | pristine, untouched |
+
+⚠️ **Standing rule: never let 00.06.0521 install.** It is staged on both units,
+one confirmation tap away in the DJI app, and there is no way back. Keep the
+phone off the internet whenever the app is open.
+
+00.06.0518 is the firmware that closed the root exploit, so **Path A (root + EP
+SDK) is unavailable on both** and we drive them stock — see
+[HARDWARE.md](HARDWARE.md).
+
+Batteries are healthy: two hold a full charge, and a 45 s motion run with the
+drive motors loaded costs about 1%. Not a constraint. DJI no longer sells
+replacements, so treat them as irreplaceable.
+
+Devices the robot enumerates on connect, all present:
+
+```
+ImageTransmission  Camera  Chassis  Battery  Gimbal  WaterGun
+ESC0 ESC1 ESC2 ESC3
+FrontArmor BackArmor LeftArmor RightArmor LeftHeadArmor RightHeadArmor
+```
+
+### The host
+
+| | |
+|---|---|
+| Machine | Mac mini (Mac16,11), **Apple M4 Pro**, 14 cores (10P/4E), 64 GB |
+| OS | macOS 26.6.2 (Darwin 25.6.0), arm64 |
+| Rosetta 2 | present — **required**, see §3 |
+
+---
+
+## 2. Network — dual-homed, deliberately
+
+The robot's Wi-Fi has no uplink, so joining it would normally cost all internet
+access. A USB CAT5 adapter solves that: **Ethernet carries the internet, Wi-Fi
+carries the robot.**
+
+| Interface | Service (order) | Role |
+|---|---|---|
+| `en9` | USB 10/100/1000 LAN (#2) | **default route** — internet, and this session |
+| `en1` | Wi-Fi (#4) | the robot's AP only |
+| `en0` | Ethernet (#1) | built-in port, unused/inactive |
+
+Driving the robot puts `en1` on `192.168.2.x` with the S1 at `192.168.2.1`,
+while `en9` stays on the house LAN at `192.168.1.0/24`. Different subnets,
+different gateways, no ambiguity.
+
+Both connection modes tolerate this:
+
+- **WiFi Direct** does no discovery — the bridge dials the S1's fixed AP address
+  and the OS routes it over the interface owning that subnet.
+- **Router mode**'s finder binds UDP `:45678` on the wildcard address, so it
+  receives the robot's broadcasts on *any* interface.
+
+### ⚠️ The trap: never leave Wi-Fi on the house LAN
+
+If Wi-Fi rejoins the house network while Ethernet is plugged in, **both
+interfaces land on `192.168.1.0/24` behind the same gateway** and macOS installs
+two default routes:
+
+```
+default   192.168.1.1   UGScg    en9
+default   192.168.1.1   UGScIg   en1
+```
+
+A long-lived TCP connection is pinned to a source address. macOS re-elects the
+primary service on any link event — Wi-Fi roam, DHCP renew, sleep/wake, adapter
+renegotiation — and each flip changes the source address and kills every
+established connection. This showed up as **intermittent, self-healing API
+disconnections**, and it is absent while driving the robot because that uses a
+different subnet.
+
+```bash
+netstat -rn -f inet | awk '$1=="default"'   # more than one line = this bug
+
+networksetup -setairportpower en1 off       # between sessions
+networksetup -setairportpower en1 on        # to join the robot
+```
+
+Durable fix: turn **off Auto-Join for the house SSID** (System Settings → Wi-Fi
+→ Details) so Wi-Fi only ever connects when deliberately pointed at the robot.
+
+Also: the WireGuard VPN (`darrell`) must stay **disconnected** during robot work.
+A default-route VPN swallows traffic to the S1.
+
+---
+
+## 3. Toolchain
+
+| | |
+|---|---|
+| Go | **1.27.1**, `/opt/homebrew/bin/go` (Homebrew 6.0.21) |
+| clang | 21.0.0, Command Line Tools at `/Library/Developer/CommandLineTools` |
+| Bridge | `github.com/brunoga/robomaster` **v0.0.11** |
+| Blob | `~/.unitybridge/unitybridge`, 15,971,232 bytes, Mach-O x86_64 |
+
+### Why everything builds as amd64
+
+DJI never shipped an arm64 macOS build of the UnityBridge and never will, so
+`s1probe` is built `GOARCH=amd64` and runs under **Rosetta 2**. This is not a
+performance problem — measured at 30.1 fps of 720p video for 0.20–0.25 cores
+(ARCHITECTURE.md §6).
+
+The native-arm64 route is understood and deliberately deferred: DJI's *iOS*
+build is arm64 and unencrypted and re-platforms to Mac Catalyst in one `vtool`
+command, but dyld requires the loading process to match platform and neither Go
+nor CLT clang can emit a Catalyst binary. See
+[SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md) and DECISIONS.md #10, #11.
+
+Rosetta is on a clock — Apple has signalled it will be pared back after macOS 27.
+The exit is to relocate `s1-driver` to a Linux amd64 host; the bus makes that
+packaging rather than a rewrite.
+
+### First-time setup
+
+```bash
+brew install go
+./scripts/install-bridge.sh   # copies DJI's blob from the Go module cache to ~/.unitybridge
+./scripts/build.sh            # builds bin/s1probe as amd64
+```
+
+`install-bridge.sh` reads the module cache, so it works offline once
+`go mod download` has run. The blob is proprietary DJI code: **never committed
+here, never redistributed.**
+
+Everything rebuilds with no network:
+
+```bash
+GOPROXY=off ./scripts/build.sh
+```
+
+---
+
+## 4. This repo
+
+```
+cmd/s1probe/       the harness: main, motion program, safety demo, report
+internal/probe/    distribution stats + the JSON report shape
+internal/safety/   the governor — deadman, clamps, arming, e-stop (M2)
+scripts/           install-bridge.sh, build.sh
+runs/              measurement JSON (gitignored)
+docs/              this file, and the ones below
+```
+
+| Doc | What it is |
+|---|---|
+| [STATUS.md](STATUS.md) | **Start here.** Where things stand, open questions, session log |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Services, command model, safety rules, measured latency budget |
+| [DECISIONS.md](DECISIONS.md) | Every non-obvious choice, with revisit triggers |
+| [HARDWARE.md](HARDWARE.md) | The three transport paths and the firmware situation |
+| [M1.md](M1.md) / [M1-RUNBOOK.md](M1-RUNBOOK.md) | The latency milestone, and its offline field card |
+| [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md) | Why we run under Rosetta |
+
+Ignored on purpose: `bin/`, `runs/`, and `log/` — DJI's library writes its own
+log directory into the working directory on every run.
+
+---
+
+## 5. Peer repos
+
+**`foveate`** — `~/Documents/Source Code/foveate`, the perception stack. It owns
+the tiers; this repo owns the vehicle. They meet on a Redis Streams bus, where
+`s1-driver` will publish foveate's own `FrameMessage` on the `frames` stream so
+the robot's camera enters the existing pipeline as just another camera.
+
+State as of 2026-09-04: on `main` at `efee82c`. The `frames` contract is intact
+in `services/shared/schemas.py`. A recent commit moved 3D-printing work *out* to
+a `blender-hand` project — "Foveate returns to being the vision system" — so the
+seam is unaffected. **foveate has not yet landed its M8 (multi-camera), which is
+the prerequisite for M4 here.** Sequence that work in the foveate session.
+
+Foveate's own dependencies: Docker Desktop (Redis), Ollama with a vision model.
+At the time of writing **Ollama is reachable; Docker is not running**, so the
+bus is down — fine, because nothing in this repo needs it until M4.
+
+---
+
+## 6. Everyday commands
+
+```bash
+# build
+./scripts/build.sh
+
+# tests (the safety layer is the part with tests)
+go test -race ./...
+go test -cover ./internal/safety/
+
+# talk to the robot — Wi-Fi must be on the S1's AP
+./bin/s1probe -wifi-direct -connect-only
+./bin/s1probe -wifi-direct -video 60s -json runs/$(date +%Y%m%d-%H%M).json
+./bin/s1probe -wifi-direct -motion -video 45s      # drives the robot
+./bin/s1probe -wifi-direct -safety-demo            # proves the safety layer
+```
+
+---
+
+## 7. Traps that already cost us time
+
+1. **`Chassis.SetSpeed()` silently does nothing.** Movement goes through
+   `Controller.Move` — the virtual stick — refreshed at ~20 Hz. A whole motion
+   run was recorded against a stationary chassis before this was caught
+   (DECISIONS.md #12).
+2. **No command through this bridge is ever acknowledged.** `DirectSendKeyValue`
+   is fire-and-forget: a `nil` error is *not* evidence the robot acted. Watch the
+   robot, or read telemetry.
+3. **Speeds are stick deflection in [-1, 1], not m/s.** The safety clamp is a
+   deflection clamp.
+4. **The vehicle watchdogs the virtual stick.** A single send does nothing, and
+   motion stops when the stream lapses — the hardware enforcing our own
+   deadman design.
+5. **Control-plane RTT is not measurable.** Even `useCache=false` returns in
+   0.2 ms because the bridge answers from its own state.
+6. **`BatteryPowerPercent()` panics** if called before the robot's first battery
+   push — it dereferences a nil atomic pointer. Guard it.
+7. **Two NICs on one subnet breaks long-lived connections.** §2.

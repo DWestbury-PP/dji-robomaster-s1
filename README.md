@@ -56,8 +56,11 @@ See [docs/STATUS.md](docs/STATUS.md) for where things stand and
 
 | Doc | What's in it |
 |---|---|
-| [docs/STATUS.md](docs/STATUS.md) | **Start here.** Blockers, progress, bring-up, session log |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Services, transports, command model, safety, roadmap |
+| [docs/STATUS.md](docs/STATUS.md) | **Start here.** Where things stand, open questions, session log |
+| [docs/SETUP.md](docs/SETUP.md) | **The working setup** — machines, network, toolchain, and the traps |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Services, command model, safety rules, measured latency budget |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Every non-obvious choice, with rationale and revisit triggers |
-| [docs/HARDWARE.md](docs/HARDWARE.md) | The three transport paths, firmware triage, what to buy |
+| [docs/HARDWARE.md](docs/HARDWARE.md) | The three transport paths and the firmware situation |
+| [docs/M1.md](docs/M1.md) | The latency milestone: what was measured, and what cannot be |
+| [docs/M1-RUNBOOK.md](docs/M1-RUNBOOK.md) | Offline field card for working with the robot |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |
