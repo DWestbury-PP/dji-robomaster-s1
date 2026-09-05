@@ -53,6 +53,47 @@ if `ifconfig en1` comes back with a `192.168.1.x` address after joining the
 robot, routing is ambiguous and you should unplug the Ethernet adapter and fall
 back to Option C for that run.
 
+### ⚠️ Never leave Wi-Fi on your home LAN while Ethernet is plugged in
+
+Diagnosed 2026-09-04 after intermittent, self-resolving API disconnections.
+
+With the adapter plugged in and Wi-Fi still joined to the house network, **both
+interfaces sit on `192.168.1.0/24` behind the same gateway**, and macOS installs
+two default routes:
+
+```
+default   192.168.1.1   UGScg    en9      ← Ethernet
+default   192.168.1.1   UGScIg   en1      ← Wi-Fi
+```
+
+A long-lived TCP connection is pinned to a source address. macOS re-elects the
+primary service on *any* link event — a Wi-Fi roam between APs or bands, a DHCP
+renew, sleep/wake, the adapter renegotiating — and when primary flips between
+`.111` and `.97` the source address changes and every established connection
+dies. Streaming API sessions notice immediately. It then settles on its own,
+which is why the symptom is *intermittent and self-healing* rather than a
+straightforward outage.
+
+This does **not** happen while driving the robot: the S1's AP is `192.168.2.x`
+behind a different gateway, so there is no ambiguity. The failures cluster in the
+windows after Wi-Fi has silently rejoined the house network.
+
+**Fix.** Keep Wi-Fi off except when joining the robot:
+
+```bash
+networksetup -setairportpower en1 off    # off between sessions
+networksetup -setairportpower en1 on     # on, to join the S1's AP
+```
+
+Durable version: turn **off Auto-Join for the home SSID** (System Settings →
+Wi-Fi → Details) so it stops rejoining the LAN after every robot session.
+
+**Check for it any time the session gets flaky:**
+
+```bash
+netstat -rn -f inet | awk '$1=="default"'   # more than one line = this bug
+```
+
 ## Option B — router mode, no Wi-Fi switching at all
 
 Use the RoboMaster app to put the S1 into **router/station mode** joined to your

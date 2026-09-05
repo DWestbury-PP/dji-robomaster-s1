@@ -45,6 +45,7 @@ var (
 	allowChass  = flag.Bool("allow-chassis", false, "Permit a brief chassis nudge for actuation RTT. Off by default: the gimbal is used instead.")
 	jsonOut     = flag.String("json", "", "Write the full report as JSON to this path.")
 	connectOnly = flag.Bool("connect-only", false, "Connect, report link facts, exit. No video, no motion.")
+	safetyRun   = flag.Bool("safety-demo", false, "Prove the safety layer on hardware: drive, let the producer die and watch the deadman stop it, then e-stop mid-drive. Implies motion.")
 	motion      = flag.Bool("motion", false, "Run a bounded motion exercise during video sampling: rotation in place, sub-metre translations, gimbal sweeps, infrared fire. Never fires beads.")
 	verbose     = flag.Bool("v", false, "Verbose library logging.")
 )
@@ -122,6 +123,28 @@ func main() {
 		fmt.Sprintf("devices: %v", c.Robot().Devices()))
 
 	if *connectOnly {
+		rep.Incomplete = false
+		return
+	}
+
+	// ---- Safety demonstration (M2) ----------------------------------------
+	// Runs instead of the measurement phases: it is a proof, not a benchmark.
+	if *safetyRun {
+		fmt.Println("safety layer demonstration — the robot will move")
+		sr := &safetyReport{}
+		if err := safetyDemo(c, sr); err != nil {
+			fatal(rep, "safety demo: %v", err)
+			return
+		}
+		sr.DeadmanFiredAfterMs = float64(sr.DeadmanFiredAfter.Nanoseconds()) / 1e6
+		sr.print()
+
+		rep.Notes = append(rep.Notes,
+			fmt.Sprintf("safety: moved=%v stopped_on_silence=%v deadman=%.0fms estop_stopped=%v refused=%d accepted=%d no_lurch=%v",
+				sr.MovedUnderCommand, sr.StoppedAfterSilence, sr.DeadmanFiredAfterMs,
+				sr.StoppedOnEStop, sr.RefusedDuringEStop, sr.AcceptedDuringEStop,
+				sr.StillStoppedAfterClear))
+		rep.Safety = sr
 		rep.Incomplete = false
 		return
 	}

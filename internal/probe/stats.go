@@ -101,6 +101,7 @@ type Report struct {
 	Series     []Summary `json:"series"`
 	CPU        CPU       `json:"cpu"`
 	Notes      []string  `json:"notes,omitempty"`
+	Safety     any       `json:"safety,omitempty"`
 	Incomplete bool      `json:"incomplete"`
 }
 
