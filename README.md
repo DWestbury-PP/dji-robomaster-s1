@@ -1,33 +1,42 @@
 # dji-robomaster-s1
 
-**A DIY control and autonomy stack for two shelf-retired DJI RoboMaster S1s.**
+**Driving a shelf-retired DJI RoboMaster S1 from a browser, with a vision model riding along.**
 
-DJI abandoned the S1. The onboard "AI" was the disappointing part, the
-omnidirectional Mecanum chassis was the good part, and the vehicle is a
-perfectly good body looking for a better brain. This repo is that brain's
-nervous system: a browser teleop console, a safety layer, and a video path
-that feeds [foveate](../foveate) — the tiered perception stack — so a
-vision-language model can eventually drive.
+DJI abandoned the S1. The onboard "AI" was the disappointing part; the
+omnidirectional Mecanum chassis was the good part. This moves the intelligence
+off the robot and onto a Mac: a full-screen browser console, a safety layer
+between the operator and the wheels, and two perception tiers that watch the
+robot's camera — a detector drawing boxes at ~10 ms, and a vision-language model
+narrating the room in prose every 20 seconds.
+
+**The human drives.** Nothing a model produces actuates anything, and that is a
+measured decision rather than a missing feature — see
+[docs/BAKEOFF.md](docs/BAKEOFF.md) and `DECISIONS.md` #15. Every drive is
+recorded, so the demonstration data exists for the day that changes.
+
+No modification to the robot: it runs stock firmware and is driven by
+impersonating the mobile app.
 
 ```
- browser (WASD / arrows / gamepad)          foveate (peer repo, shared bus)
-        │                                   ┌───────────────────────────────┐
-        │  WebSocket: intent up,            │  motion │ YOLO │ VLM │ fusion │
-        │  telemetry down · MJPEG video     └────▲──────────────────┬───────┘
-        ▼                                        │ frames           │ fusion
- ┌──────────────────────────────┐ ───────────────┘                  │
- │  s1teleop  (one Go process)  │                                   ▼
- │  ──────────────────────────  │                            ┌──────────────┐
- │  console  :8700              │ ◄──────── intentions ──────│ intent loop  │
- │  safety governor  ← last hop │                            │   (later)    │
- │  control loop     20 Hz      │                            └──────────────┘
- └──────────────┬───────────────┘
-      UnityBridge (app mode, amd64 under Rosetta)
-                ▼
-         ╔═════════════╗
-         ║ RoboMaster  ║  stock, unrooted, fw 00.06.0518
-         ║     S1      ║
-         ╚═════════════╝
+ browser — full-screen video, WASD + gamepad
+     │  WebSocket: intent up, telemetry down · MJPEG video down
+     ▼
+ ┌────────────────────────────────────┐
+ │  s1teleop              one process │
+ │  ────────────────────────────────  │
+ │  console            :8700          │
+ │  safety governor    ← last hop     │
+ │  control loop       20 Hz          │
+ │  drive recorder     every drive    │
+ └───┬────────────────────────────┬───┘
+     │                            │  HTTP
+     │  UnityBridge               │  GET  /frame.jpg
+     │  app mode, amd64/Rosetta   │  POST /perception
+     ▼                            ▼
+ ╔═══════════════════╗   ┌────────────────────────────┐
+ ║  RoboMaster S1    ║   │  detector    boxes ~10 ms  │
+ ║  stock firmware   ║   │  s1narrate   prose / 20 s  │
+ ╚═══════════════════╝   └────────────────────────────┘
 ```
 
 Three structural ideas do most of the work here:
@@ -42,9 +51,10 @@ the governor, which clamps them; the console is never trusted to limit anything.
 Closing the tab is treated as a dead producer and the deadman stops the vehicle
 — deliberately the same path as a crash or a Wi-Fi drop.
 
-**`frames` is published in foveate's own schema**, so the robot's camera will
-enter the existing perception pipeline as just another camera. No perception
-code is duplicated or forked.
+**Perception tiers pull frames over HTTP and post observations back.** No
+broker, no shared filesystem — which is why a Python detector and a Go narrator
+sit side by side without either knowing the other exists, and why a slow model
+can never delay the control loop.
 
 ## Status
 
@@ -92,3 +102,43 @@ cd perception/detector && uv run detect.py -v   # the detector
 | [docs/M4.md](docs/M4.md) | Perception transport: cadence classes, and why observations are dated |
 | [docs/BAKEOFF.md](docs/BAKEOFF.md) | Model comparison on real frames — local and hosted, and what it settled |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |
+
+## Built on
+
+- **[brunoga/robomaster](https://github.com/brunoga/robomaster)** — the Go
+  library that speaks the S1's app-mode protocol. Everything here stands on it;
+  without it there is no project.
+- **[Ultralytics YOLO](https://github.com/ultralytics/ultralytics)** for the
+  detector, **[Ollama](https://ollama.com)** for local vision models
+  (`gemma4:e4b`, `qwen2.5vl`).
+- Runtime and model measurements were first established in a sibling perception
+  project and re-verified here on the robot's own frames.
+
+**DJI's UnityBridge library is proprietary and is not distributed in this
+repository.** `scripts/install-bridge.sh` copies it out of the
+`brunoga/robomaster` module cache into `~/.unitybridge` on your own machine.
+
+## Status and scope
+
+A working, well-instrumented toy — not a product. It drives one specific robot
+on one specific desk, and the parts that matter are written down: 20 numbered
+decisions with the evidence behind them and the conditions that would reverse
+them. Several exist because something surprising happened on a real floor.
+
+## Licence
+
+[MIT](LICENSE), covering the code in this repository. DJI's UnityBridge library
+is proprietary and is not distributed here.
+
+## Safety
+
+This drives a physical vehicle that carries a gel-blaster turret.
+
+- Every command passes through a governor with a deadman timer, deflection
+  clamps and an e-stop, enforced on the last hop before the wire — see
+  `internal/safety` and `ARCHITECTURE.md` §5.
+- The blaster is **infrared only** in this codebase. Bead firing exists in the
+  underlying library and is deliberately unreachable from the console.
+- No model output actuates anything (`DECISIONS.md` #15).
+
+If you fork this, keep the governor between whatever you build and the wheels.

@@ -146,8 +146,8 @@ The S1 now joins the house network rather than serving its own AP.
 
 | | |
 |---|---|
-| Address | `192.168.1.39` (MAC `60:60:1f:cd:b8:66`) |
-| App ID | `4050813280395343415`, state **paired** |
+| Address | `192.168.1.x` (MAC `60:60:1f:xx:xx:xx` (DJI OUI)) |
+| App ID | `<your app id>`, state **paired** |
 | Announcement | UDP broadcast on `:45678`, about every 500 ms |
 
 **The DJI app is not needed to bring the robot up.** Measured with no app
@@ -203,7 +203,7 @@ change for them.
    on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
    design (ARCHITECTURE.md §6).
 3. ~~**Router mode, for range.**~~ **Resolved 2026-09-05 — adopted.** The S1 is
-   joined to the house network at `192.168.1.39`. It is **better on every
+   joined to the house network at `192.168.1.x`. It is **better on every
    measure that matters**, not merely more convenient: jitter fell ~7× and the
    p99 tail 3× against direct mode (ARCHITECTURE.md §6). Dual-homing is gone —
    one network for Redis, Ollama and the robot. Router mode is now the default
