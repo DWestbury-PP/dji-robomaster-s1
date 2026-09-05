@@ -477,3 +477,36 @@ narration is an observer, never a requirement (#15) — nothing breaks without i
 **General rule this implies.** Any overlay added to this console must justify
 what it occludes at floor level, not at eye level. When in doubt, put it up
 top and let it be moved.
+
+---
+
+### 20. The fast tier is Python, and that is the transport working
+
+**Decision.** The detector is a Python process using Ultralytics, living in
+`perception/detector/`, pulling `/frame.jpg` and posting detections to
+`/perception`. The rest of the repo stays Go.
+
+**Why a separate process** — required, not preferred. `s1teleop` is pinned to
+amd64 under Rosetta by the DJI bridge and owns a 20 Hz safety-critical loop.
+Inference belongs near neither. The detector runs natively on arm64 precisely
+because it is not in that process.
+
+**Why Python.** The vision ecosystem is there, and foveate had already measured
+the runtimes. Writing it in Go would mean CGO, an ONNX Runtime build and CoreML
+execution-provider setup, to reach a number Ultralytics reaches out of the box.
+
+**Why this is not architectural drift.** DECISIONS.md #14 chose an HTTP
+transport over a broker partly because it is language-agnostic. This is the
+first thing to actually exercise that, and it cost one directory and no changes
+to the console. A tier is a process that pulls frames and posts observations;
+what it is written in is its own business.
+
+**Measured on the live robot:** 7–17 ms per detection at yolo11n on MPS,
+including JPEG decode. Comfortably inside the 15 fps the console encodes at.
+
+**A false positive worth keeping in view.** The first live run boxed
+`person 35%` over the robot's own gun barrel, at exactly the confidence floor.
+Nothing bad happened, because detections actuate nothing (#15). Had they been
+wired to a reflex, the robot would have backed away from itself — the same
+failure the scene tier's prompt had to be written around, arriving by a
+different route.

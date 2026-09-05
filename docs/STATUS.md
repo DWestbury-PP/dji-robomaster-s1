@@ -21,6 +21,7 @@ what it sees.
 | Control | 20 Hz rate commands, 250 ms deadman, live gears, e-stop |
 | Console | full-bleed cockpit, movable narration, drawer for everything else |
 | Observer | `gemma4:e4b` prose caption every 20 s, **1.6–3.7 s** per caption |
+| Detector | yolo11n on MPS, **7–17 ms** a frame, boxes drawn and logged |
 | Tests | 49 top-level (61 with subtests), race-clean |
 | Recording | on by default — `logs/drives/<timestamp>/` |
 
@@ -72,10 +73,10 @@ See ARCHITECTURE.md §7.
 | M3.6–3.8 — gears, cockpit UI, movable narration | ✅ done |
 | M4 — perception transport | ✅ done (DECISIONS.md #14) |
 | M4.1 — model bake-off | ✅ done — [BAKEOFF.md](BAKEOFF.md) |
-| M4.2 — fast tier: YOLO boxes | **next** |
+| M4.2 — fast tier: YOLO boxes | ✅ **done — 7–17 ms, boxes on the console** |
 | M4.3 — scene tier: `s1narrate` | ✅ **done — narrating live** |
 | M4.4 — the experience log | ✅ **done — recording every drive by default** |
-| M4.5 — advisory looming highlight | not started |
+| M4.5 — advisory looming highlight | **next** |
 | M5 — mobile app | not started |
 | ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
 

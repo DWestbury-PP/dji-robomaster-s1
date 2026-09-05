@@ -91,6 +91,16 @@ deadman, which is deliberately the same path as a browser crash or a Wi-Fi drop.
 The HUD surfaces the governor's `Reason` on every tick, which turns "it won't
 move" into "deadman" without a debugger.
 
+### `perception/detector` (Python) — the fast tier
+
+Its own process, running natively on arm64. Pulls `/frame.jpg` at a target rate,
+runs yolo11n on MPS, and posts boxes to `/perception`. Measured 7–17 ms a frame
+on the live robot including JPEG decode.
+
+Python because the vision ecosystem is there; a separate process because
+`s1teleop` is amd64-under-Rosetta and owns the control loop (DECISIONS.md #20).
+Detections are drawn and logged; they actuate nothing (#15).
+
 ### `s1narrate` (Go) — the observer
 
 Its own process. Pulls a frame from `/frame.jpg` on its own cadence, asks a
@@ -269,7 +279,7 @@ numbers. This one does not.
 [x] M3.6 — Live speed gears; M3.7 — cockpit UI; M3.8 — movable narration
 [x] M4 — Perception transport: cadence-matched frame access, dated observations
 [x] M4.1 — Model bake-off on a real corpus; scene tier chosen on evidence
-[ ] M4.2 — Fast tier: YOLO boxes to the console. Visualisation and logging only
+[x] M4.2 — Fast tier: YOLO boxes to the console. Visualisation and logging only
 [x] M4.3 — Scene tier: `s1narrate` narrating in prose on its own cadence
 [x] M4.4 — The experience log: frames + narration + OPERATOR INPUT, time-aligned.
            On by default. Detections join it when M4.2 lands

@@ -60,6 +60,7 @@ layer that stops the vehicle when anything goes quiet.
 | Link | router mode — jitter **3.3 ms σ**, ~7× better than the robot's own AP |
 | Control | 20 Hz rate commands under a 250 ms deadman |
 | Observer | `gemma4:e4b` narrating in prose every 20 s, 1.6–3.7 s per caption |
+| Detector | yolo11n on MPS, 7–17 ms a frame — drawn and logged, never actuating |
 | Tests | **41** (53 with subtests), race-clean |
 
 Next is M4 — publishing `frames` onto foveate's bus so YOLO and the VLM can
@@ -72,6 +73,7 @@ stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
 ./bin/s1find              # where is the robot?
 ./bin/s1teleop            # console at http://localhost:8700
 ./bin/s1narrate -v        # the observer, in its own process
+cd perception/detector && uv run detect.py -v   # the detector
 ./bin/s1teleop -mock      # no robot needed
 ```
 
