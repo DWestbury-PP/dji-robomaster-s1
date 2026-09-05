@@ -29,6 +29,7 @@ import (
 
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/driver"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/safety"
+	"github.com/DWestbury-PP/dji-robomaster-s1/internal/stick"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/teleop"
 )
 
@@ -217,8 +218,13 @@ func pumpVideo(c *robomaster.Client, hub *teleop.FrameHub) {
 type robotSink struct{ client *robomaster.Client }
 
 func (s *robotSink) Move(cx, cy, gx, gy float64) error {
-	chassis := controller.StickPosition{X: cx, Y: cy}
-	gimbal := controller.StickPosition{X: gx, Y: gy}
+	// Our convention is positive Y = forward / up (safety.Command). The virtual
+	// stick negates Y, so everything must go through stick.ToVirtual — passing
+	// raw values here inverted drive and turret pitch on the first live drive.
+	chx, chy := stick.ToVirtual(cx, cy)
+	gix, giy := stick.ToVirtual(gx, gy)
+	chassis := controller.StickPosition{X: chx, Y: chy}
+	gimbal := controller.StickPosition{X: gix, Y: giy}
 	return s.client.Controller().Move(&chassis, &gimbal, controller.ModeFPV)
 }
 

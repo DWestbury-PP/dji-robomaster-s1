@@ -9,6 +9,8 @@ import (
 	"github.com/brunoga/robomaster/module/controller"
 	"github.com/brunoga/robomaster/module/gun"
 	"github.com/brunoga/robomaster/module/robot"
+
+	"github.com/DWestbury-PP/dji-robomaster-s1/internal/stick"
 )
 
 // Movement goes through the Controller module's virtual stick
@@ -120,9 +122,12 @@ func holdStick(ctx context.Context, ctrl *controller.Controller,
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 
+	chx, chy := stick.ToVirtual(cx, cy)
+	gix, giy := stick.ToVirtual(gx, gy)
+
 	for time.Now().Before(deadline) {
-		chassis := controller.StickPosition{X: cx, Y: cy}
-		gimbal := controller.StickPosition{X: gx, Y: gy}
+		chassis := controller.StickPosition{X: chx, Y: chy}
+		gimbal := controller.StickPosition{X: gix, Y: giy}
 		if err := ctrl.Move(&chassis, &gimbal, controller.ModeFPV); err != nil {
 			return err
 		}
