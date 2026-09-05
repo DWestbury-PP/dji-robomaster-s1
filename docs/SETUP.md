@@ -194,6 +194,9 @@ GOPROXY=off ./scripts/build.sh
 cmd/s1teleop/      the browser console: bridge + governor + loop + HTTP (M3)
 cmd/s1probe/       the measurement harness: motion program, safety demo, report
 cmd/s1find/        broadcast discovery: is the robot on the network, and paired?
+cmd/s1narrate/     the observer: pulls frames, narrates them in prose
+cmd/s1capture/     builds a frame corpus from a drive, for model comparison
+cmd/s1bakeoff/     scores candidate models on a corpus, local and hosted
 internal/safety/   the governor — deadman, clamps, arming, e-stop (M2)
 internal/driver/   the 20 Hz control loop, behind a hardware-free Sink
 internal/teleop/   MJPEG hub, WebSocket, embedded UI
@@ -204,10 +207,17 @@ runs/              measurement JSON (gitignored)
 docs/              this file, and the ones below
 ```
 
-Three binaries. `s1teleop` is the real thing — it holds the bridge, runs the
-governor and the control loop, and serves the console. `s1probe` is the
-measurement tool that produced §6 and carries the hardware safety demo.
+Six binaries, in two groups.
+
+**Running the robot:** `s1teleop` is the real thing — it holds the bridge, runs
+the governor and the control loop, and serves the console. `s1narrate` is the
+observer, a separate process so a slow model can never affect driving.
 `s1find` is the router-mode diagnostic.
+
+**Measuring it:** `s1probe` produced ARCHITECTURE.md §6 and carries the hardware
+safety demo. `s1capture` builds a frame corpus from a drive and `s1bakeoff`
+scores models against it — together they are why model choice is settled by
+evidence rather than by reading spec sheets.
 
 | Doc | What it is |
 |---|---|
@@ -262,6 +272,14 @@ go test -cover ./internal/safety/ ./internal/driver/ ./internal/teleop/
 ./bin/s1teleop -fps 10 -quality 60  # if the stream struggles
 ./bin/s1teleop -speed-level medium  # robot-side gear; slow (default), medium, fast
 
+# narrate what it sees — separate process, start and stop it freely
+./bin/s1narrate -v                        # gemma4:e4b every 20s
+./bin/s1narrate -model qwen2.5vl:7b -interval 12s -v
+
+# compare models on a recorded drive
+./bin/s1capture -out corpus/drive-02 -count 250 -note "kitchen and hallway"
+./bin/s1bakeoff -corpus corpus/drive-02 -models "gemma4:e4b,qwen3-vl:8b" -think off
+
 # measure it
 ./bin/s1probe -connect-only
 ./bin/s1probe -video 60s -json runs/$(date +%Y%m%d-%H%M).json
@@ -302,3 +320,16 @@ vehicle — correct, but it looks like a fault if you do not know.
    timers to ~1 Hz, so the deadman fires. Working as intended.
 10. **The S1 ignores ICMP.** `ping` failing proves nothing about whether the
     robot is up. Use `bin/s1find`, which listens for its broadcast.
+11. **Power-cycling the robot silently disables movement.** Movement control is
+    per-robot-session state; the bridge transparently restores video and
+    telemetry on reconnect, so everything looks healthy and nothing moves.
+    `s1teleop` now re-applies session setup on reconnect — but any new
+    per-session state must be re-applied there too.
+12. **The bottom of the frame is not UI space.** A camera 20 cm off the floor
+    makes the lower third the *most* navigationally important region, inverting
+    the usual convention. Any overlay must justify what it occludes at floor
+    level (DECISIONS.md #19).
+13. **Ollama and the Anthropic API disagree on schemas.** The API requires
+    `additionalProperties: false` on every object; Ollama does not care. And
+    Ollama streams `message.thinking` separately from `message.content`, both
+    drawn from one token budget — miss it and reasoning models look broken.

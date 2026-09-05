@@ -91,10 +91,26 @@ deadman, which is deliberately the same path as a browser crash or a Wi-Fi drop.
 The HUD surfaces the governor's `Reason` on every tick, which turns "it won't
 move" into "deadman" without a debugger.
 
-### intent loop (Python) — later (M5+)
+### `s1narrate` (Go) — the observer
 
-Consumes `fusion`, emits `intentions`, which `s1-driver` executes under the same
-safety layer as a human. It gets no privileged path.
+Its own process. Pulls a frame from `/frame.jpg` on its own cadence, asks a
+local model to describe it in prose, and posts the caption to `/perception`.
+
+It **pulls rather than being pushed to**, which is the whole reason a slow model
+cannot hurt anything: however long it takes, the control loop and the video are
+untouched (DECISIONS.md #14). Running on real frames with `gemma4:e4b` it
+produces a caption in 1.6–3.7 s.
+
+No schema — free prose (#16). Nothing downstream parses it and nothing acts on
+it (#15), so the only measure that matters is whether the caption is true and
+readable.
+
+### intent loop — deferred
+
+Consuming `fusion` and emitting `intentions` waits for a model fast and
+spatially reliable enough to trust, which the 2026-09-05 bake-off showed does
+not currently exist (DECISIONS.md #15). The transport is already in place for
+when it does.
 
 ## 4. Command model
 
@@ -249,10 +265,12 @@ numbers. This one does not.
 [x] M2 — Safety layer in Go with tests (deadman, clamps, arming, e-stop)
         └ hardware proof via `s1probe -safety-demo` still outstanding
 [x] M3 — Browser teleop at :8700: WASD/gamepad, MJPEG view, telemetry HUD, e-stop
+[x] M3.5 — Router mode adopted; jitter ~7x better than the robot's own AP
+[x] M3.6 — Live speed gears; M3.7 — cockpit UI; M3.8 — movable narration
 [x] M4 — Perception transport: cadence-matched frame access, dated observations
 [x] M4.1 — Model bake-off on a real corpus; scene tier chosen on evidence
 [ ] M4.2 — Fast tier: YOLO boxes to the console. Visualisation and logging only
-[ ] M4.3 — Scene tier: periodic narration from the chosen model
+[x] M4.3 — Scene tier: `s1narrate` narrating in prose on its own cadence
 [ ] M4.4 — The experience log: frames + detections + narration + OPERATOR INPUT,
            time-aligned. The demonstration corpus (DECISIONS.md #15)
 [ ] M4.5 — Advisory looming highlight in the console, wired to nothing
