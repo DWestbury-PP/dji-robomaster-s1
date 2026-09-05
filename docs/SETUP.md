@@ -65,7 +65,14 @@ carries the robot.**
 
 Driving the robot puts `en1` on `192.168.2.x` with the S1 at `192.168.2.1`,
 while `en9` stays on the house LAN at `192.168.1.0/24`. Different subnets,
-different gateways, no ambiguity.
+different gateways, no ambiguity. The S1 does not answer ICMP, so `ping` is not
+a connectivity test — check the ARP table, or just try connecting.
+
+**Router mode would remove all of this.** The S1 can join an existing network
+instead ("Connection via Router" in the DJI app), which DJI says gives broader
+coverage. One network for Redis, Ollama and the robot; no adapter, no toggling,
+no same-subnet trap. Not yet done — see STATUS.md open question #3 for the
+requirements and the caveats.
 
 Both connection modes tolerate this:
 
@@ -156,13 +163,21 @@ GOPROXY=off ./scripts/build.sh
 ## 4. This repo
 
 ```
-cmd/s1probe/       the harness: main, motion program, safety demo, report
-internal/probe/    distribution stats + the JSON report shape
+cmd/s1teleop/      the browser console: bridge + governor + loop + HTTP (M3)
+cmd/s1probe/       the measurement harness: motion program, safety demo, report
 internal/safety/   the governor — deadman, clamps, arming, e-stop (M2)
+internal/driver/   the 20 Hz control loop, behind a hardware-free Sink
+internal/teleop/   MJPEG hub, WebSocket, embedded UI
+internal/stick/    the one place a DJI StickPosition may be built from
+internal/probe/    distribution stats + the JSON report shape
 scripts/           install-bridge.sh, build.sh
 runs/              measurement JSON (gitignored)
 docs/              this file, and the ones below
 ```
+
+Two binaries. `s1teleop` is the real thing — it holds the bridge, runs the
+governor and the control loop, and serves the console. `s1probe` is the
+measurement tool that produced §6 and carries the hardware safety demo.
 
 | Doc | What it is |
 |---|---|
@@ -171,6 +186,7 @@ docs/              this file, and the ones below
 | [DECISIONS.md](DECISIONS.md) | Every non-obvious choice, with revisit triggers |
 | [HARDWARE.md](HARDWARE.md) | The three transport paths and the firmware situation |
 | [M1.md](M1.md) / [M1-RUNBOOK.md](M1-RUNBOOK.md) | The latency milestone, and its offline field card |
+| [M3.md](M3.md) | The browser console: running it, controls, what it measures |
 | [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md) | Why we run under Rosetta |
 
 Ignored on purpose: `bin/`, `runs/`, and `log/` — DJI's library writes its own
@@ -200,19 +216,28 @@ bus is down — fine, because nothing in this repo needs it until M4.
 ## 6. Everyday commands
 
 ```bash
-# build
+# build both binaries
 ./scripts/build.sh
 
-# tests (the safety layer is the part with tests)
+# tests
 go test -race ./...
-go test -cover ./internal/safety/
+go test -cover ./internal/safety/ ./internal/driver/ ./internal/teleop/
 
-# talk to the robot — Wi-Fi must be on the S1's AP
+# drive it — Wi-Fi must be on the S1's AP
+./bin/s1teleop                      # console at http://localhost:8700
+./bin/s1teleop -mock                # synthetic video, no robot needed
+./bin/s1teleop -fps 10 -quality 60  # if the stream struggles
+
+# measure it
 ./bin/s1probe -wifi-direct -connect-only
 ./bin/s1probe -wifi-direct -video 60s -json runs/$(date +%Y%m%d-%H%M).json
 ./bin/s1probe -wifi-direct -motion -video 45s      # drives the robot
 ./bin/s1probe -wifi-direct -safety-demo            # proves the safety layer
 ```
+
+Open the console in a **focused window**. Chrome throttles timers in hidden
+tabs, so a backgrounded console stops feeding commands and the deadman stops the
+vehicle — correct, but it looks like a fault if you do not know.
 
 ---
 
@@ -235,3 +260,9 @@ go test -cover ./internal/safety/
 6. **`BatteryPowerPercent()` panics** if called before the robot's first battery
    push — it dereferences a nil atomic pointer. Guard it.
 7. **Two NICs on one subnet breaks long-lived connections.** §2.
+8. **`controller.StickPosition` negates Y but not X.** Passing our convention
+   (positive = forward/up) in raw inverts drive and turret pitch while leaving
+   strafe and yaw correct — which is what makes it confusing rather than
+   obvious. Build stick positions only through `internal/stick.ToVirtual`.
+9. **A backgrounded browser tab stops the robot.** Chrome throttles hidden-tab
+   timers to ~1 Hz, so the deadman fires. Working as intended.

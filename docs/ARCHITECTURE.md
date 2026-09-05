@@ -212,18 +212,21 @@ numbers. This one does not.
 
 ```
 [x] M0 — Firmware triage; transport selected (Path B, app-mode)
-[ ] M1 — Bare link + latency harness; fill §6; go/no-go on Rosetta decode
-[ ] M2 — Safety layer in Go with tests (deadman, clamps, arming, e-stop)
-[ ] M3 — Browser teleop at :8700: WASD/gamepad, MJPEG view, telemetry HUD, e-stop
-[ ] M4 — s1-driver publishing `frames`; foveate narrates the robot's view
+[x] M1 — Bare link + latency harness; §6 filled; Rosetta cleared on evidence
+[x] M2 — Safety layer in Go with tests (deadman, clamps, arming, e-stop)
+        └ hardware proof via `s1probe -safety-demo` still outstanding
+[x] M3 — Browser teleop at :8700: WASD/gamepad, MJPEG view, telemetry HUD, e-stop
+[ ] M4 — publishing `frames`; foveate narrates the robot's view
+        └ blocked on foveate's own M8 (multi-camera)
 [ ] M5 — Intentions schema, designed jointly with foveate M10
 [ ] M6 — Closed-loop autonomy v1: navigate by obstacle class from `fusion`
 [ ] M7 — Mobile app — decide then whether it goes through the Mac or talks to
          the S1 directly via brunoga/robomaster-mobile (gomobile)
 ```
 
-M1 is a measurement milestone, not a feature. If the numbers come back bad, we
-learn it before building three milestones on top of them.
+M1 was a measurement milestone rather than a feature, and it earned its place:
+the numbers cleared Rosetta on evidence and killed the case for the arm64 work
+(#11) before three milestones were stacked on an assumption.
 
 ## 8. Known unknowns carried into M1
 

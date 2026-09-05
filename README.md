@@ -10,47 +10,66 @@ that feeds [foveate](../foveate) — the tiered perception stack — so a
 vision-language model can eventually drive.
 
 ```
- browser (WASD / gamepad)                    foveate (peer repo, shared bus)
-        │  WebSocket                        ┌──────────────────────────────┐
-        ▼                                   │  motion │ YOLO │ VLM │ fusion │
-   ┌─────────┐                              └────▲──────────────────┬───────┘
-   │ teleop  │ ── s1.commands ──┐        frames  │                  │ fusion
-   │ :8700   │ ◄─ s1.telemetry ─┤                │                  ▼
-   └─────────┘                  ▼                │           ┌─────────────┐
-        ▲                ┌──────────────┐ ───────┘           │ intent loop │
-        │ MJPEG          │  s1-driver   │                    │   (later)   │
-        └────────────────│  (Go)        │ ◄── intentions ────└─────────────┘
-                         │  safety      │
-                         │  inline      │
-                         └──────┬───────┘
-                       UnityBridge (app mode)
-                                ▼
-                         ╔═════════════╗
-                         ║ RoboMaster  ║  stock, unrooted, fw 00.06.0518
-                         ║     S1      ║
-                         ╚═════════════╝
+ browser (WASD / arrows / gamepad)          foveate (peer repo, shared bus)
+        │                                   ┌──────────────────────────────┐
+        │  WebSocket: intent up,            │  motion │ YOLO │ VLM │ fusion │
+        │  telemetry down · MJPEG video     └────▲──────────────────┬───────┘
+        ▼                                        │ frames           │ fusion
+ ┌──────────────────────────────┐ ───────────────┘                  │
+ │  s1teleop  (one Go process)  │                                   ▼
+ │  ──────────────────────────  │                            ┌─────────────┐
+ │  console  :8700              │ ◄──────── intentions ───────│ intent loop │
+ │  safety governor  ← last hop │                            │   (later)   │
+ │  control loop     20 Hz      │                            └─────────────┘
+ └──────────────┬───────────────┘
+      UnityBridge (app mode, amd64 under Rosetta)
+                ▼
+         ╔═════════════╗
+         ║ RoboMaster  ║  stock, unrooted, fw 00.06.0518
+         ║     S1      ║
+         ╚═════════════╝
 ```
 
-Two structural ideas do most of the work here:
+Three structural ideas do most of the work here:
 
-**`s1-driver` publishes `frames` in foveate's own schema**, so the robot's camera
-enters the existing perception pipeline as just another camera. No perception
+**Everything that touches the robot is one Go process.** DJI's bridge handle is
+process-wide, so control and video cannot be separate services — and that is
+also why the safety governor lives inside it, on the last hop before the wire
+where nothing can route around it (DECISIONS.md #6, #9, #13).
+
+**The browser sends intent, never authority.** Held keys and gamepad axes go to
+the governor, which clamps them; the console is never trusted to limit anything.
+Closing the tab is treated as a dead producer and the deadman stops the vehicle
+— deliberately the same path as a crash or a Wi-Fi drop.
+
+**`frames` is published in foveate's own schema**, so the robot's camera will
+enter the existing perception pipeline as just another camera. No perception
 code is duplicated or forked.
-
-**Control and video share one process** because DJI's bridge handle is
-process-wide — which is also why the safety layer lives inside it, on the last
-hop before the wire, where nothing can route around it.
 
 ## Status
 
-Design phase; nothing implemented yet. M0 is done: both vehicles run firmware
-00.06.0518, which closes the root-and-EP-SDK route, so we drive a **stock,
-unmodified S1** by impersonating the mobile app. Next is M1 — a latency
-harness, because two numbers (Wi-Fi jitter under motion, and video decode under
-Rosetta) decide whether the autonomy design survives contact.
+**A working control system.** M0–M3 are complete and verified on hardware: a
+stock, unmodified S1 driven from a browser with live video, through a safety
+layer that stops the vehicle when anything goes quiet.
 
-See [docs/STATUS.md](docs/STATUS.md) for where things stand and
+| | |
+|---|---|
+| Transport | app-mode UnityBridge on **stock firmware 00.06.0518** — no rooting |
+| Video | 1280×720 at **30.1 fps**, 0% deficit, **0.24 cores** under Rosetta |
+| Under motion | drive motors, strafes and 360° rotation change nothing |
+| Control | 20 Hz rate commands under a 250 ms deadman |
+| Tests | **36** (48 with subtests), race-clean |
+
+Next is M4 — publishing `frames` onto foveate's bus so YOLO and the VLM can
+narrate the robot's view. See [docs/STATUS.md](docs/STATUS.md) for where things
+stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
+
+```bash
+./scripts/install-bridge.sh && ./scripts/build.sh
+./bin/s1teleop            # console at http://localhost:8700
+./bin/s1teleop -mock      # no robot needed
+```
 
 ## Documentation
 
