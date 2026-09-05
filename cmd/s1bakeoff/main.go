@@ -32,6 +32,8 @@ var (
 	host    = flag.String("host", "http://localhost:11434", "Ollama endpoint.")
 	sample  = flag.Int("sample", 12, "Frames to score per model, spread evenly through the corpus.")
 	timeout = flag.Duration("timeout", 180*time.Second, "Per-request timeout.")
+	think   = flag.String("think", "default", "Reasoning: 'default' leaves the model alone, 'off' disables it, 'on' forces it. Reasoning models spend most of their latency here, so it is worth measuring both ways.")
+	predict = flag.Int("num-predict", 2000, "Token budget. Must be generous for reasoning models: thinking tokens come out of the same budget, and a tight cap silently truncates the answer to nothing.")
 	outDir  = flag.String("out", "runs/bakeoff", "Where to write the report and raw answers.")
 )
 
@@ -45,14 +47,23 @@ type manifest struct {
 }
 
 type result struct {
-	Model    string
-	Frame    string
-	Total    time.Duration
-	TTFT     time.Duration // time to first token: what a streaming consumer feels
-	Valid    bool
-	ParseErr string
-	Raw      string
-	Scene    Scene
+	Model string
+	Frame string
+	Total time.Duration
+	// TTFT is time to the first *answer* token. For a reasoning model this is
+	// long after the request, because thinking comes first.
+	TTFT time.Duration
+	// ThinkMs is time spent reasoning before any answer appeared, and
+	// ThinkChars how much of it there was. On a robot this is pure latency, so
+	// whether it buys accuracy is the question worth asking.
+	ThinkMs    float64
+	ThinkChars int
+	Truncated  bool // ran out of token budget — the failure that looks like a bad model
+	Valid      bool
+	ParseErr   string
+	Raw        string
+	Thinking   string
+	Scene      Scene
 }
 
 func main() {
@@ -99,9 +110,16 @@ func main() {
 			if !r.Valid {
 				status = "BAD"
 			}
-			fmt.Printf("   [%2d/%d] %s %s  %6.1fs total  %5.1fs first-token  %s\n",
-				i+1, len(frames), status, f,
-				r.Total.Seconds(), r.TTFT.Seconds(), truncate(r.Scene.Summary, 44))
+			detail := truncate(r.Scene.Summary, 40)
+			if !r.Valid {
+				detail = truncate(r.ParseErr, 40)
+			}
+			thinkNote := ""
+			if r.ThinkChars > 0 {
+				thinkNote = fmt.Sprintf(" think %.1fs", r.ThinkMs/1000)
+			}
+			fmt.Printf("   [%2d/%d] %s %s %6.1fs%s  %s\n",
+				i+1, len(frames), status, f, r.Total.Seconds(), thinkNote, detail)
 		}
 		fmt.Println()
 	}
@@ -116,7 +134,7 @@ func main() {
 func score(host, model, frame string, img []byte, timeout time.Duration) result {
 	r := result{Model: model, Frame: frame}
 
-	body, _ := json.Marshal(map[string]any{
+	req := map[string]any{
 		"model":  model,
 		"stream": true,
 		"format": SceneSchema,
@@ -129,9 +147,16 @@ func score(host, model, frame string, img []byte, timeout time.Duration) result 
 			// Temperature 0 is the standard advice for schema adherence, and we
 			// want determinism for a comparison anyway.
 			"temperature": 0,
-			"num_predict": 400,
+			"num_predict": *predict,
 		},
-	})
+	}
+	switch *think {
+	case "off":
+		req["think"] = false
+	case "on":
+		req["think"] = true
+	}
+	body, _ := json.Marshal(req)
 
 	client := &http.Client{Timeout: timeout}
 	start := time.Now()
@@ -143,29 +168,50 @@ func score(host, model, frame string, img []byte, timeout time.Duration) result 
 	}
 	defer res.Body.Close()
 
-	var sb strings.Builder
+	var sb, think strings.Builder
 	dec := json.NewDecoder(res.Body)
 	for {
 		var chunk struct {
 			Message struct {
 				Content string `json:"content"`
+				// Reasoning models stream their reasoning in a separate field.
+				// Missing this is what made two capable models look broken.
+				Thinking string `json:"thinking"`
 			} `json:"message"`
-			Done bool `json:"done"`
+			Done       bool   `json:"done"`
+			DoneReason string `json:"done_reason"`
 		}
 		if err := dec.Decode(&chunk); err != nil {
 			break
+		}
+		if chunk.Message.Thinking != "" {
+			think.WriteString(chunk.Message.Thinking)
+			r.ThinkMs = float64(time.Since(start).Nanoseconds()) / 1e6
 		}
 		if chunk.Message.Content != "" && r.TTFT == 0 {
 			r.TTFT = time.Since(start)
 		}
 		sb.WriteString(chunk.Message.Content)
 		if chunk.Done {
+			r.Truncated = chunk.DoneReason == "length"
 			break
 		}
 	}
 	r.Total = time.Since(start)
 	r.Raw = sb.String()
+	r.Thinking = think.String()
+	r.ThinkChars = think.Len()
+	if r.ThinkChars == 0 {
+		r.ThinkMs = 0
+	}
 
+	if strings.TrimSpace(r.Raw) == "" {
+		r.ParseErr = "no answer content"
+		if r.Truncated {
+			r.ParseErr = "token budget exhausted before any answer (raise -num-predict)"
+		}
+		return r
+	}
 	if err := json.Unmarshal([]byte(r.Raw), &r.Scene); err != nil {
 		r.ParseErr = err.Error()
 		return r
@@ -192,7 +238,7 @@ func report(all []result, models []string, outDir string) {
 			continue
 		}
 
-		valid, selfRef := 0, 0
+		valid, selfRef, thinking, truncated := 0, 0, 0, 0
 		var totals, ttfts []time.Duration
 		for _, r := range rs {
 			if r.Valid {
@@ -207,11 +253,24 @@ func report(all []result, models []string, outDir string) {
 			if mentionsSelf(r) {
 				selfRef++
 			}
+			if r.ThinkChars > 0 {
+				thinking++
+			}
+			if r.Truncated {
+				truncated++
+			}
 		}
-		fmt.Printf("%-22s %5d %7d%% %7.1fs %8.1fs %8.1fs %6d/%d\n",
+		note := ""
+		if thinking > 0 {
+			note += fmt.Sprintf(" reasons(%d/%d)", thinking, len(rs))
+		}
+		if truncated > 0 {
+			note += fmt.Sprintf(" TRUNCATED(%d)", truncated)
+		}
+		fmt.Printf("%-22s %5d %7d%% %7.1fs %8.1fs %8.1fs %6d/%d%s\n",
 			m, len(rs), valid*100/len(rs),
 			pct(totals, 0.50).Seconds(), pct(totals, 0.95).Seconds(),
-			pct(ttfts, 0.50).Seconds(), selfRef, len(rs))
+			pct(ttfts, 0.50).Seconds(), selfRef, len(rs), note)
 	}
 	fmt.Println(strings.Repeat("─", 88))
 	fmt.Println("valid    = parsed against the schema. Grammar-constrained, so near-100% is expected;")
