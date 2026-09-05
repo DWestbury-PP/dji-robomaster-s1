@@ -91,6 +91,7 @@ func main() {
 		statusFn = st
 		cleanup = clean
 		go pumpVideo(c, hub)
+		go superviseLink(ctx, c, gov, log)
 	}
 	if cleanup != nil {
 		defer cleanup()
@@ -196,15 +197,45 @@ func connectRobot(log *slog.Logger) (*robomaster.Client, func() teleop.Status, f
 		return nil, nil, nil, errors.New("robot did not report its devices within 20s")
 	}
 
+	if _, err := parseSpeedLevel(*speedLevel); err != nil {
+		return nil, nil, nil, err
+	}
+	applySessionSetup(c, log)
+
+	log.Info("connected", "devices", c.Robot().Devices())
+
+	status := func() teleop.Status {
+		pct, ok := safeBattery(c)
+		// Report the robot's actual state. Returning a hardcoded true here
+		// meant the HUD claimed a healthy link while the vehicle was powered
+		// off, which is worse than showing nothing.
+		return teleop.Status{
+			Connected: c.Robot().Connected(),
+			Battery:   int(pct),
+			HaveBatt:  ok,
+		}
+	}
+	return c, status, func() { _ = c.Stop() }, nil
+}
+
+// applySessionSetup enables the functions the robot needs and sets the gear.
+//
+// This is per-robot-session state, not per-connection: power-cycling the
+// vehicle discards it. The bridge transparently re-subscribes video and
+// telemetry on reconnect, which makes the loss invisible — everything looks
+// healthy and nothing moves. So this must be re-applied on every reconnect,
+// not once at startup.
+func applySessionSetup(c *robomaster.Client, log *slog.Logger) {
 	if err := c.Robot().EnableFunction(robot.FunctionTypeMovementControl, true); err != nil {
 		log.Warn("enabling movement control", "err", err)
 	}
 	if err := c.Robot().EnableFunction(robot.FunctionTypeGunControl, true); err != nil {
 		log.Warn("enabling gun control", "err", err)
 	}
+
 	lvl, err := parseSpeedLevel(*speedLevel)
 	if err != nil {
-		return nil, nil, nil, err
+		return
 	}
 	if prev, err := c.Robot().ChassisSpeedLevel(); err == nil {
 		if err := c.Robot().SetChassisSpeedLevel(lvl); err != nil {
@@ -213,14 +244,44 @@ func connectRobot(log *slog.Logger) (*robomaster.Client, func() teleop.Status, f
 			log.Info("chassis speed level set", "level", *speedLevel, "previous", prev)
 		}
 	}
+}
 
-	log.Info("connected", "devices", c.Robot().Devices())
+// superviseLink watches the robot's connection and reacts to both edges.
+//
+// Losing it tells the governor, which zeroes output and disarms — the path
+// ARCHITECTURE.md §5.5 specifies and which nothing was previously wiring.
+// Regaining it re-applies session setup, because a rebooted vehicle has
+// forgotten that movement control was ever enabled.
+func superviseLink(ctx context.Context, c *robomaster.Client, gov *safety.Governor, log *slog.Logger) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
 
-	status := func() teleop.Status {
-		pct, ok := safeBattery(c)
-		return teleop.Status{Connected: true, Battery: int(pct), HaveBatt: ok}
+	was := c.Robot().Connected()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := c.Robot().Connected()
+			if now == was {
+				continue
+			}
+			was = now
+
+			if !now {
+				log.Warn("robot link lost — stopping and disarming")
+				gov.SetLinkDown(true)
+				continue
+			}
+
+			// Re-arm the session before telling the governor the link is back,
+			// so no command can reach a robot that has not been re-enabled.
+			log.Info("robot link restored — re-applying session setup")
+			applySessionSetup(c, log)
+			gov.SetLinkDown(false)
+			log.Info("movement control re-enabled after reconnect")
+		}
 	}
-	return c, status, func() { _ = c.Stop() }, nil
 }
 
 // safeBattery guards upstream's BatteryPowerPercent, which dereferences an
