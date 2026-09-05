@@ -18,22 +18,40 @@ and no Claude session. Everything needed is already on disk.
 GOPROXY=off ./scripts/build.sh
 ```
 
-## Option A — keep your internet (recommended)
+## Option A — keep your internet (in use, verified 2026-09-04)
 
-Your Mac's `Ethernet` service is **ordered ahead of Wi-Fi**, so with a wired
-adapter plugged in, internet flows over Ethernet while Wi-Fi joins the S1's AP.
-You keep the session and get direct mode. Your LAN is `192.168.1.0/24` and the
-S1's AP is typically `192.168.2.0/24`, so there is no subnet collision.
+A CAT5-to-USB-C adapter is plugged in and working:
 
-Verify after plugging in and joining the S1:
+| Interface | Service | Role |
+|---|---|---|
+| `en9` | USB 10/100/1000 LAN (order #2) | **holds the default route** — internet |
+| `en1` | Wi-Fi (order #4) | free to join the S1's AP — robot |
+
+Internet flows over Ethernet while Wi-Fi talks to the robot, so the Claude
+session survives the whole bring-up.
+
+**Both connection modes were checked against this setup and are safe:**
+
+- *Router mode* — the library's finder listens on `0.0.0.0:45678` (wildcard
+  bind), so it receives the robot's broadcasts on **any** interface. Being
+  dual-homed does not hide the robot.
+- *WiFi Direct* — no UDP discovery at all. `TypeWiFiDirect` is handed to the
+  bridge, which connects to the S1's fixed AP address; the OS routes it over
+  the interface owning that subnet, i.e. Wi-Fi.
+
+After joining the S1's AP, confirm the split held:
 
 ```bash
-route -n get default | grep interface   # want: en0 (Ethernet)
-ifconfig en1 | grep "inet "             # Wi-Fi should hold an S1-side address
+route -n get default | grep interface   # want: en9  (internet still on Ethernet)
+ifconfig en1 | grep "inet "             # want: an S1-side address, NOT 192.168.1.x
+ping -c1 1.1.1.1                        # internet alive while on the robot's AP
 ```
 
-USB tethering from an iPhone works the same way, but check the service order —
-Ethernet is already first, so it is the cleaner option.
+⚠️ **The one thing that would break this: a subnet collision.** Your LAN is
+`192.168.1.0/24`. The S1's AP is normally `192.168.2.0/24`, which is fine — but
+if `ifconfig en1` comes back with a `192.168.1.x` address after joining the
+robot, routing is ambiguous and you should unplug the Ethernet adapter and fall
+back to Option C for that run.
 
 ## Option B — router mode, no Wi-Fi switching at all
 
