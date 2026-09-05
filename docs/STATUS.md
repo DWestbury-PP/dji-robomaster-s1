@@ -76,6 +76,7 @@ See ARCHITECTURE.md §7.
 | M4.2 — fast tier: YOLO boxes | ✅ **done — 7–17 ms, boxes on the console** |
 | M4.3 — scene tier: `s1narrate` | ✅ **done — narrating live** |
 | M4.4 — the experience log | ✅ **done — recording every drive by default** |
+| M4.9 — hide boxes / narration | ✅ done |
 | M4.5 — advisory looming highlight | **next** |
 | M5 — mobile app | not started |
 | ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
@@ -160,6 +161,34 @@ robot off and on and run `./bin/s1find` **without opening the app**. If it is
 found, the app is never needed again; if not, the credentials do not persist
 and that is worth knowing before relying on it.
 
+## The repo is public
+
+**https://github.com/DWestbury-PP/dji-robomaster-s1** — MIT, since 2026-09-05.
+
+Audited before publishing: no secret ever committed, DJI's proprietary blob
+never tracked, no recorded frames of the house. Device identifiers (robot MAC,
+DJI app ID), specific host addresses and the operator's name were redacted from
+the docs; `s1find` tells a reader how to get their own. History deliberately
+retains the MAC and app ID in one commit each — both are LAN-local, and the
+commit trail is worth more than scrubbing something with no attack surface.
+
+`LICENSE` must stay unmodified MIT or GitHub reports "Other"; third-party terms
+live in `NOTICE`.
+
+## Bringing it back up
+
+```bash
+./scripts/build.sh
+./bin/s1find                                   # is the robot on the network?
+./bin/s1teleop                                 # console at :8700, recording by default
+./bin/s1narrate -v                             # the observer
+cd perception/detector && uv run detect.py -v  # the detector
+```
+
+Three processes, started in any order. The narrator and detector poll and will
+wait for the console; the console re-applies session setup when the robot
+reconnects, so a battery swap needs no restart.
+
 ## What M4 established
 
 The bake-off ([BAKEOFF.md](BAKEOFF.md)) scored candidates on 250 real frames
@@ -219,6 +248,19 @@ change for them.
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 5 (2026-09-05, evening).** Built the fast tier (Python/YOLO, 7–17 ms),
+the experience log (on by default, recording both requested and applied
+control), and overlay toggles for boxes and narration. Audited and published the
+repo under MIT.
+
+Two self-inflicted bugs worth remembering. A `let` declared below its first use
+threw at load and killed the whole console script — video, telemetry and all —
+while the DOM still looked fine; the browser console found it in one look. And
+`git add -A` swept in two byte-identical macOS `name 2.go` duplicates, which Go
+compiles as real source, leaving `main` briefly broken *on a public repo*. That
+landed on the one commit of the day where the tests were skipped because the
+change looked trivial. Tests before every commit, including the trivial ones.
 
 **Session 4 (2026-09-05, afternoon).** Built the perception transport, the
 corpus tool and the bake-off harness; scored local and hosted models on 250 real
