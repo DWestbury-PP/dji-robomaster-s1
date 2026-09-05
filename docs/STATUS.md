@@ -48,26 +48,31 @@ See ARCHITECTURE.md §7.
 | Milestone | State |
 |---|---|
 | M0 — firmware triage, transport choice | ✅ done — Path B |
-| M1 — link + latency harness | 🔨 software half **done and verified**; needs a powered-on S1 |
+| M1 — link + latency harness | ✅ **done — GO** (ARCHITECTURE.md §6) |
 | arm64 bridge spike | investigated, **deferred** (DECISIONS.md #11) |
-| M2 — safety layer (Go) | not started |
+| M2 — safety layer (Go) | **next** |
 | M3 — browser teleop | not started |
 | M4 — video into foveate | not started |
 | M5–M7 — intentions, autonomy, mobile | not started |
 
-## M1 in progress
+## M1 complete — GO
 
-`s1probe` is written, builds as amd64, and was smoke-tested with no robot
-present. The meaningful result from that: **DJI's UnityBridge loads,
-initializes, runs its event loop and scans for robots under Rosetta 2** on
-Apple Silicon. The transport is real, not theoretical. Idle CPU was 0.01 cores.
+Ran against a real vehicle over WiFi Direct, dual-homed (Ethernet for internet,
+Wi-Fi for the robot). Numbers in ARCHITECTURE.md §6; raw runs in `runs/`.
 
-What remains is hardware-in-the-loop — see [M1.md](M1.md) for the procedure:
-
-- [ ] `./bin/s1probe -wifi-direct -connect-only` against a powered-on vehicle
-- [ ] Full run in WiFi Direct mode
-- [ ] Full run in router mode, for comparison (open question #3)
-- [ ] Fill in ARCHITECTURE.md §6 and decide go/no-go on Rosetta decode (#11)
+- ✅ **Rosetta is a non-issue.** 30.1 fps at 1280×720, zero deficit, 0.24 cores.
+  DECISIONS.md #11 stays deferred on evidence.
+- ✅ **Motion does not degrade the link.** 39 legs of rotation, translation,
+  strafes, gimbal sweeps and infrared fire changed nothing; jitter was slightly
+  lower than stationary.
+- ✅ **All 16 devices enumerate**, including Chassis, Gimbal, Camera and WaterGun.
+- ⚠️ **Control-plane RTT is not observable through this bridge.** Even with
+  `useCache=false` the library answers from its own state in 0.2 ms. Recorded as
+  a property of the API, not a measurement.
+- ⚠️ **Frame delivery is bursty** — identical moving and still, so it is the
+  decoder batching, not the radio. Inside the deadman; a smoothness issue.
+- ⚠️ **Our JPEG encode costs 23.6 ms** of a 33 ms frame budget. Do not encode
+  every frame in `s1-driver`.
 
 ## Open questions
 
@@ -77,8 +82,10 @@ What remains is hardware-in-the-loop — see [M1.md](M1.md) for the procedure:
 2. **Rosetta decode cost.** Video decode happens inside the emulated blob, not
    on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
    design (ARCHITECTURE.md §6).
-3. **Wi-Fi mode.** Direct (S1 as AP) may force the Mac off the network hosting
-   Redis and Ollama. Router mode avoids that but adds a hop. Measure both.
+3. ~~**Wi-Fi mode.**~~ **Resolved 2026-09-04** — a USB Ethernet adapter carries
+   the default route while Wi-Fi holds the robot's AP, so direct mode costs
+   nothing. Router mode is now an option, not a requirement. Both connection
+   modes tolerate being dual-homed (M1-RUNBOOK.md Option A).
 4. **Two vehicles at once.** The bridge handle is process-wide; whether a second
    S1 can be driven from the same host is unknown.
 5. **Path C camera.** If we ever replace the intelligent controller, does the FPV

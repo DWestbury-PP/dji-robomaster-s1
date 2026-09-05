@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"image"
@@ -44,6 +45,7 @@ var (
 	allowChass  = flag.Bool("allow-chassis", false, "Permit a brief chassis nudge for actuation RTT. Off by default: the gimbal is used instead.")
 	jsonOut     = flag.String("json", "", "Write the full report as JSON to this path.")
 	connectOnly = flag.Bool("connect-only", false, "Connect, report link facts, exit. No video, no motion.")
+	motion      = flag.Bool("motion", false, "Run a bounded motion exercise during video sampling: rotation in place, sub-metre translations, gimbal sweeps, infrared fire. Never fires beads.")
 	verbose     = flag.Bool("v", false, "Verbose library logging.")
 )
 
@@ -159,10 +161,39 @@ func main() {
 		rep.Notes = append(rep.Notes, fmt.Sprintf("actuation probe: %v", err))
 	}
 
-	// ---- Phase 4: video ---------------------------------------------------
-	if err := videoProbe(c, rep, *videoSecs); err != nil {
-		fatal(rep, "video probe: %v", err)
-		return
+	// ---- Phase 4: video, optionally under motion --------------------------
+	// The jitter figure only means something when the motors are running and
+	// the antenna is moving, so the exercise runs concurrently with sampling.
+	if *motion {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() {
+				if r := recover(); r != nil {
+					rep.Notes = append(rep.Notes, fmt.Sprintf("motion program panicked: %v", r))
+				}
+			}()
+			if err := motionProgram(ctx, c, func(f string, a ...any) {
+				fmt.Printf(f+"\n", a...)
+			}); err != nil {
+				rep.Notes = append(rep.Notes, fmt.Sprintf("motion program: %v", err))
+			}
+		}()
+		rep.Notes = append(rep.Notes, "video sampled WHILE MOVING (-motion)")
+
+		err := videoProbe(c, rep, *videoSecs)
+		cancel()
+		<-done
+		if err != nil {
+			fatal(rep, "video probe: %v", err)
+			return
+		}
+	} else {
+		if err := videoProbe(c, rep, *videoSecs); err != nil {
+			fatal(rep, "video probe: %v", err)
+			return
+		}
 	}
 
 	rep.Notes = append(rep.Notes, "battery at end: "+batteryString(c))

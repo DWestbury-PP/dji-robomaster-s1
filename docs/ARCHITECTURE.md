@@ -154,12 +154,35 @@ its own internal state rather than the wire, so the call never exposes link
 latency. This is a property of the bridge, not a tuning problem. Real
 key-to-motion needs the external method (docs/M1.md).
 
-**Two things to watch.** Frame delivery is *bursty*: a perfect 33 ms median, but
-a 1 ms minimum (frames arriving back-to-back) and a p99 of 127 ms — roughly four
-frame times. Mean throughput hides it. It sits comfortably inside the 250 ms
-deadman, so it threatens smoothness rather than safety. And our own JPEG encode
-costs 23.6 ms against a 33 ms frame budget, single-threaded — fine at foveate's
-10 fps capture rate, but `s1-driver` must not naively encode every frame.
+### Under motion — the pass that mattered
+
+Repeated with a bounded motion exercise running *during* sampling: rotation in
+place, sub-metre translations in each direction including Mecanum strafes,
+gimbal sweeps and infrared fire — 39 legs over 44 s (`runs/direct-03-motion.json`).
+
+| Metric | Stationary | **Under motion** |
+|---|---|---|
+| Throughput | 30.1 fps | **30.1 fps** |
+| Frame interval p50 | 33.0 ms | **33.0 ms** |
+| p95 | 63.9–68.2 ms | **63.9 ms** |
+| p99 | 126.7–129.4 ms | **126.6 ms** |
+| Jitter (σ) | 23.1–29.3 ms | **21.9 ms** |
+| Process CPU | 0.20–0.25 cores | **0.24 cores** |
+
+**Motion does not degrade the link.** Jitter under motion was marginally *lower*
+than stationary — inside the noise, but unambiguously not worse. The risk this
+milestone existed to find is not there.
+
+That also reinterprets the burstiness. It is identical moving and still, so it
+is **not the radio**: it is the decoder/bridge delivering frames in batches. The
+signature is a 1 ms minimum (two frames back-to-back) against a clean 33 ms
+median, with p95 and p99 landing near exact multiples of the frame time.
+
+**Consequences for the design.** The p99 gap of 127 ms sits comfortably inside
+the 250 ms deadman, so this is a smoothness property, not a safety one. At
+foveate's 10 fps capture rate it occasionally costs one frame. And our own
+RGB→JPEG encode costs 23.6 ms against a 33 ms budget, single-threaded — fine at
+10 fps, but `s1-driver` must not naively encode every frame at 30.
 
 The reason a ~300 ms video horizon is acceptable at all: the VLM is not in the
 control loop. Reflexes belong to tier 0/1 and to the safety layer; the VLM sets
