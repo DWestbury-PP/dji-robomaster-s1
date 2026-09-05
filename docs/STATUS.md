@@ -2,7 +2,8 @@
 
 > The living progress log. Read this + [ARCHITECTURE.md](ARCHITECTURE.md)
 > to resume work. Rationale: [DECISIONS.md](DECISIONS.md). Transport paths and
-> firmware triage: [HARDWARE.md](HARDWARE.md). Investigations:
+> firmware triage: [HARDWARE.md](HARDWARE.md). Current milestone: [M1.md](M1.md).
+> Investigations:
 > [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
 ## Where things stand (2026-09-04, end of session 1)
@@ -47,12 +48,26 @@ See ARCHITECTURE.md §7.
 | Milestone | State |
 |---|---|
 | M0 — firmware triage, transport choice | ✅ done — Path B |
-| M1 — link + latency harness | **next** |
+| M1 — link + latency harness | 🔨 software half **done and verified**; needs a powered-on S1 |
 | arm64 bridge spike | investigated, **deferred** (DECISIONS.md #11) |
 | M2 — safety layer (Go) | not started |
 | M3 — browser teleop | not started |
 | M4 — video into foveate | not started |
 | M5–M7 — intentions, autonomy, mobile | not started |
+
+## M1 in progress
+
+`s1probe` is written, builds as amd64, and was smoke-tested with no robot
+present. The meaningful result from that: **DJI's UnityBridge loads,
+initializes, runs its event loop and scans for robots under Rosetta 2** on
+Apple Silicon. The transport is real, not theoretical. Idle CPU was 0.01 cores.
+
+What remains is hardware-in-the-loop — see [M1.md](M1.md) for the procedure:
+
+- [ ] `./bin/s1probe -wifi-direct -connect-only` against a powered-on vehicle
+- [ ] Full run in WiFi Direct mode
+- [ ] Full run in router mode, for comparison (open question #3)
+- [ ] Fill in ARCHITECTURE.md §6 and decide go/no-go on Rosetta decode (#11)
 
 ## Open questions
 
