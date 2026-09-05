@@ -7,10 +7,11 @@
 > Investigations:
 > [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
-## Where things stand (2026-09-04, end of session 1)
+## Where things stand (2026-09-04)
 
-**Design only. No code written.** M0 is complete: both vehicles were powered up
-and their firmware read, which settled the transport.
+**A working control system.** M0–M3 complete, all verified on hardware: a stock,
+unmodified S1 driven from a browser with live video, through a safety layer that
+stops the vehicle whenever anything goes quiet.
 
 ## M0 result — Path A is closed, Path B is selected
 
@@ -51,10 +52,9 @@ See ARCHITECTURE.md §7.
 | M0 — firmware triage, transport choice | ✅ done — Path B |
 | M1 — link + latency harness | ✅ **done — GO** (ARCHITECTURE.md §6) |
 | arm64 bridge spike | investigated, **deferred** (DECISIONS.md #11) |
-| M2 — safety layer (Go) | ✅ done — 25 tests, hardware proof pending |
-| M3 — browser teleop | 🔨 built and tested in mock; needs the vehicle |
-| M3 — browser teleop | not started |
-| M4 — video into foveate | not started |
+| M2 — safety layer (Go) | ✅ done — 25 tests; `-safety-demo` hardware proof still outstanding |
+| M3 — browser teleop | ✅ **done — driven on hardware, controls confirmed** |
+| M4 — frames into foveate | **next** — blocked on foveate's M8 (multi-camera) |
 | M5–M7 — intentions, autonomy, mobile | not started |
 
 ## M1 complete — GO
@@ -80,6 +80,43 @@ Wi-Fi for the robot). Numbers in ARCHITECTURE.md §6; raw runs in `runs/`.
 - ⚠️ **Our JPEG encode costs 23.6 ms** of a 33 ms frame budget. Do not encode
   every frame in `s1-driver`.
 
+## M2 — safety layer
+
+`internal/safety` enforces ARCHITECTURE.md §5 on the last hop: deadman,
+per-command TTL, deflection clamps, human-only arming with its own expiry,
+e-stop, and link loss. Every failure path returns zero and names the rule that
+produced it. `internal/driver` runs it at 20 Hz behind a hardware-free `Sink`.
+
+A test caught **lurch-on-release**: commands submitted *during* an e-stop were
+latched, so the console's backlog would execute the moment the hold lifted.
+`Submit` now refuses while holding.
+
+⬜ **Outstanding:** `s1probe -safety-demo` has never been run. It drives, kills
+the producer to time the deadman, then e-stops mid-drive. Needs the vehicle.
+
+## M3 — browser teleop
+
+`s1teleop` serves the console, MJPEG and the command WebSocket from the same
+process that holds the bridge (DECISIONS.md #13). Driven on hardware
+2026-09-04; the operator confirms the controls feel right.
+
+Three bugs surfaced only by using it, none catchable from software:
+
+1. **Inverted drive and turret pitch.** `controller.StickPosition` negates Y and
+   not X, so W drove backward while strafe was fine. Fixed at the adapter —
+   `internal/stick.ToVirtual` is now the only place a StickPosition may be built
+   from. The same inversion was in `s1probe`'s motion program, so M1's
+   "forward" leg actually drove backward; the jitter measurement stands, the
+   labels were wrong.
+2. **Background tabs stop the robot.** Chrome throttles hidden-tab timers to
+   ~1 Hz, so the deadman fires. Correct behaviour, now made legible.
+3. A resolution readout that never populated and a command-rate window too short
+   to read.
+
+Live video measured **~14.8 fps at 15 fps configured, ~55 KB/frame** — real
+imagery compresses about 3× worse than the synthetic test pattern, so roughly
+6.6 Mbps.
+
 ## Open questions
 
 1. **Key discovery.** The bridge is a reverse-engineered key/value + event API;
@@ -88,10 +125,17 @@ Wi-Fi for the robot). Numbers in ARCHITECTURE.md §6; raw runs in `runs/`.
 2. **Rosetta decode cost.** Video decode happens inside the emulated blob, not
    on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
    design (ARCHITECTURE.md §6).
-3. ~~**Wi-Fi mode.**~~ **Resolved 2026-09-04** — a USB Ethernet adapter carries
-   the default route while Wi-Fi holds the robot's AP, so direct mode costs
-   nothing. Router mode is now an option, not a requirement. Both connection
-   modes tolerate being dual-homed (M1-RUNBOOK.md Option A).
+3. **Router mode, for range.** Direct mode works and is fully characterised, but
+   the S1 also supports joining an existing network ("Connection via Router"),
+   which DJI says gives broader coverage and would let it roam the house. It
+   would also **delete the dual-homing arrangement entirely** — one network for
+   Redis, Ollama and the robot, which is the shape M4 wants.
+
+   Not yet done. Requires the DJI app (⚠️ decline the staged 00.06.0521), a
+   WPA/WPA2-PSK network with client isolation off, and a QR code held up to the
+   robot's camera. Costs one extra hop, so re-run `s1probe -video 60s` in router
+   mode and compare against §6 before building on it. 2.4 GHz likely beats
+   5 GHz for whole-home range despite DJI's interference advice.
 4. **Two vehicles at once.** The bridge handle is process-wide; whether a second
    S1 can be driven from the same host is unknown.
 5. **Path C camera.** If we ever replace the intelligent controller, does the FPV
@@ -103,6 +147,15 @@ Wi-Fi for the robot). Numbers in ARCHITECTURE.md §6; raw runs in `runs/`.
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 2 (2026-09-04).** M1 hardware bring-up through M3. Connected to a real
+vehicle over WiFi Direct; measured §6 and cleared Rosetta on evidence; caught
+and corrected the `Chassis.SetSpeed` no-op that had recorded a motion run
+against a stationary chassis. Built and merged the safety layer (M2) and the
+browser console (M3), revising the architecture to put teleop in the driver
+process (#13). Diagnosed the dual-homed same-subnet routing bug that was
+dropping API sessions. Fixed inverted drive/turret axes found by driving.
+Operator confirms the control experience is good and wants it left as is.
 
 **Session 1 (2026-09-04).** Surveyed the S1 landscape: EP SDK hack (Path A),
 app-mode impersonation via UnityBridge (Path B), CAN bus brain transplant
