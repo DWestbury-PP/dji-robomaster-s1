@@ -1,0 +1,26 @@
+Third-party components
+======================
+
+The MIT licence in LICENSE covers the code in this repository only.
+
+DJI UnityBridge
+---------------
+Driving the RoboMaster S1 requires DJI's proprietary UnityBridge library, which
+is NOT distributed in this repository and is not covered by our licence.
+`scripts/install-bridge.sh` copies it from the github.com/brunoga/robomaster Go
+module cache onto your own machine. Its terms are DJI's.
+
+brunoga/robomaster
+------------------
+The Go library that speaks the S1's app-mode protocol, and the reason this
+project is possible at all: https://github.com/brunoga/robomaster
+
+Models and weights
+------------------
+Ultralytics YOLO weights and any Ollama models are downloaded at run time under
+their own licences. None are included here.
+
+Recorded data
+-------------
+Frames, drive logs and corpora produced by this software stay on your machine;
+`corpus/`, `logs/` and `runs/` are gitignored.
