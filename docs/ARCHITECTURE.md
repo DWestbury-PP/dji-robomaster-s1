@@ -271,8 +271,8 @@ numbers. This one does not.
 [x] M4.1 — Model bake-off on a real corpus; scene tier chosen on evidence
 [ ] M4.2 — Fast tier: YOLO boxes to the console. Visualisation and logging only
 [x] M4.3 — Scene tier: `s1narrate` narrating in prose on its own cadence
-[ ] M4.4 — The experience log: frames + detections + narration + OPERATOR INPUT,
-           time-aligned. The demonstration corpus (DECISIONS.md #15)
+[x] M4.4 — The experience log: frames + narration + OPERATOR INPUT, time-aligned.
+           On by default. Detections join it when M4.2 lands
 [ ] M4.5 — Advisory looming highlight in the console, wired to nothing
 [ ] M5 — Mobile app — decide then whether it goes through the Mac or talks to
          the S1 directly via brunoga/robomaster-mobile (gomobile)

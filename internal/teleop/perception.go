@@ -258,5 +258,8 @@ func (s *Server) handlePerception(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.perception.put(o)
+	if s.rec != nil {
+		s.rec.Observation(o.Tier, o.Model, o.Text, o.FrameSeq, o.LatencyMs, len(o.Detections))
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

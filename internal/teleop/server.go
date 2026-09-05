@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/DWestbury-PP/dji-robomaster-s1/internal/experience"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/safety"
 )
 
@@ -52,7 +53,22 @@ type Server struct {
 	viewers  atomic.Int64
 
 	perception *perceptionStore
+
+	// rec is optional. When present every control tick, observation and vehicle
+	// change is recorded; when nil the calls are no-ops.
+	rec *experience.Recorder
+
+	reqMu      sync.Mutex
+	lastReq    [4]float64
+	lastFire   int
+	loggedReq  [4]float64
+	loggedApp  [4]float64
+	loggedAt   time.Time
+	loggedOnce bool
 }
+
+// SetRecorder attaches a drive recorder. Safe to leave unset.
+func (s *Server) SetRecorder(r *experience.Recorder) { s.rec = r }
 
 func New(cfg Config, gov *safety.Governor, hub *FrameHub) *Server {
 	if cfg.Log == nil {
@@ -72,6 +88,28 @@ func New(cfg Config, gov *safety.Governor, hub *FrameHub) *Server {
 func (s *Server) ObserveTick(out safety.Output) {
 	s.lastReason.Store(out.Reason)
 	s.moving.Store(out.Moving())
+
+	if s.rec == nil {
+		return
+	}
+
+	// The control signal is a step function, so recording every change plus a
+	// slow heartbeat replays exactly while costing a fraction of the disk of a
+	// full 20 Hz dump.
+	applied := [4]float64{out.ChassisX, out.ChassisY, out.GimbalX, out.GimbalY}
+
+	s.reqMu.Lock()
+	req, fire := s.lastReq, s.lastFire
+	s.lastFire = 0
+	changed := !s.loggedOnce || req != s.loggedReq || applied != s.loggedApp || fire > 0
+	stale := time.Since(s.loggedAt) > time.Second
+	if changed || stale {
+		s.loggedReq, s.loggedApp, s.loggedAt, s.loggedOnce = req, applied, time.Now(), true
+		s.reqMu.Unlock()
+		s.rec.Control("human", req, applied, string(out.Reason), fire)
+		return
+	}
+	s.reqMu.Unlock()
 }
 
 func (s *Server) Handler() http.Handler {
@@ -231,7 +269,16 @@ func (s *Server) readLoop(ctx context.Context, c *websocket.Conn) {
 			}
 			s.cmdCount.Add(1)
 
+			// Remember what the human asked for, so the recorder can log it
+			// alongside what the governor allowed.
+			s.reqMu.Lock()
+			s.lastReq = [4]float64{msg.ChassisX, msg.ChassisY, msg.GimbalX, msg.GimbalY}
+			s.reqMu.Unlock()
+
 		case "fire":
+			s.reqMu.Lock()
+			s.lastFire = 1
+			s.reqMu.Unlock()
 			// Fire rides along with the current stick position so releasing
 			// the trigger does not also stop the vehicle.
 			_ = s.gov.Submit(safety.Command{
