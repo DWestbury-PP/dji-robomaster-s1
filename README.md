@@ -11,16 +11,16 @@ vision-language model can eventually drive.
 
 ```
  browser (WASD / arrows / gamepad)          foveate (peer repo, shared bus)
-        │                                   ┌──────────────────────────────┐
+        │                                   ┌───────────────────────────────┐
         │  WebSocket: intent up,            │  motion │ YOLO │ VLM │ fusion │
         │  telemetry down · MJPEG video     └────▲──────────────────┬───────┘
         ▼                                        │ frames           │ fusion
  ┌──────────────────────────────┐ ───────────────┘                  │
  │  s1teleop  (one Go process)  │                                   ▼
- │  ──────────────────────────  │                            ┌─────────────┐
- │  console  :8700              │ ◄──────── intentions ───────│ intent loop │
- │  safety governor  ← last hop │                            │   (later)   │
- │  control loop     20 Hz      │                            └─────────────┘
+ │  ──────────────────────────  │                            ┌──────────────┐
+ │  console  :8700              │ ◄──────── intentions ──────│ intent loop  │
+ │  safety governor  ← last hop │                            │   (later)    │
+ │  control loop     20 Hz      │                            └──────────────┘
  └──────────────┬───────────────┘
       UnityBridge (app mode, amd64 under Rosetta)
                 ▼
