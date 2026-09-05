@@ -180,6 +180,7 @@
   <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive &nbsp;·&nbsp;
   <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> turret &nbsp;·&nbsp;
   <kbd>[</kbd><kbd>]</kbd> gear &nbsp;·&nbsp; <kbd>n</kbd> narration &nbsp;·&nbsp;
+  <kbd>b</kbd> boxes &nbsp;·&nbsp;
   <kbd>tab</kbd> panel &nbsp;·&nbsp; <kbd>esc</kbd> stop
 </div>
 
@@ -232,6 +233,13 @@
       <tr><td>detector</td><td id="dFast" class="dim">—</td></tr>
       <tr><td>observer</td><td id="dScene" class="dim">—</td></tr>
     </table>
+    <div class="row" style="grid-template-columns:1fr;margin-top:9px">
+      <button class="btn" id="bBoxes">Hide boxes</button>
+    </div>
+    <p style="font:11px var(--ui);color:var(--dim);margin:9px 0 0">
+      Boxes are drawn and logged. They actuate nothing — there is no depth, so
+      proximity would be a guess.
+    </p>
   </section>
 
   <section>
@@ -294,9 +302,10 @@
   addEventListener("keydown", e => {
     wake();
     if (e.code === "Escape")  { send({type:"estop"}); return; }
-    if (e.code === "Tab")     { e.preventDefault(); $("drawer").classList.toggle("open"); return; }
+    if (e.code === "Tab")     { e.preventDefault(); toggleDrawer(); return; }
     if (e.code === "Space")   { e.preventDefault(); fire(); return; }
     if (e.key === "n" || e.key === "N") { toggleNarration(); return; }
+    if (e.key === "b" || e.key === "B") { toggleBoxes(); return; }
     if (e.key === "[") return setGear("drive", -1);
     if (e.key === "]") return setGear("drive", +1);
     if (e.key === ",") return setGear("turret", -1);
@@ -359,6 +368,14 @@
   }, 50);
 
   // ---- chrome auto-hide ---------------------------------------------------
+  function toggleDrawer() {
+    $("drawer").classList.toggle("open");
+    // The caption may now be under the drawer, or free to move back out.
+    const r = capEl.getBoundingClientRect();
+    if (capEl.classList.contains("placed")) placeCaption(r.left, r.top);
+    wake();
+  }
+
   let idleTimer = null;
   function wake() {
     document.body.classList.remove("idle");
@@ -456,6 +473,19 @@
   const capEl = $("caption");
   let capHidden = false, restTimer = null;
 
+  // Declared here, not next to drawOverlay: `let` leaves a temporal dead zone,
+  // so a declaration below the first call throws at load and takes the whole
+  // script with it — video, telemetry and all.
+  let boxesHidden = false;
+  try { boxesHidden = localStorage.getItem("boxesHidden") === "1"; } catch {}
+
+  function toggleBoxes(on) {
+    boxesHidden = on === undefined ? !boxesHidden : !on;
+    $("bBoxes").textContent = boxesHidden ? "Show boxes" : "Hide boxes";
+    try { localStorage.setItem("boxesHidden", boxesHidden ? "1" : "0"); } catch {}
+    wake();
+  }
+
   try {
     capHidden = localStorage.getItem("capHidden") === "1";
     const pos = JSON.parse(localStorage.getItem("capPos") || "null");
@@ -466,8 +496,12 @@
   function placeCaption(x, y) {
     const r = capEl.getBoundingClientRect();
     const w = r.width || 400, h = r.height || 90;
-    // Keep it on screen whatever the window does between sessions.
-    x = Math.max(8, Math.min(innerWidth  - w - 8, x));
+    // Keep it on screen whatever the window does between sessions — and out
+    // from under the drawer, which is opaque and would otherwise swallow the
+    // right-hand end of a caption placed near that edge.
+    const drawerW = $("drawer").classList.contains("open")
+      ? $("drawer").getBoundingClientRect().width : 0;
+    x = Math.max(8, Math.min(innerWidth - drawerW - w - 8, x));
     y = Math.max(8, Math.min(innerHeight - h - 8, y));
     capEl.classList.add("placed");
     capEl.style.left = `${x}px`;
@@ -529,22 +563,28 @@
 
   $("bNarr").onclick      = () => toggleNarration();
   $("bNarrReset").onclick = resetCaption;
+  $("bBoxes").onclick     = () => toggleBoxes();
   toggleNarration(!capHidden);
+  toggleBoxes(!boxesHidden);
 
   function renderPerception(p) {
     perception = p || {};
     const f = perception.fast;
     if (f) {
       const n = (f.detections || []).length;
-      $("dFast").textContent = `${n} object${n===1?"":"s"} · ${ageText(f.ageMs)}`;
+      // "old" rather than a bare duration: this is the age of the frame the
+      // boxes describe, not how long inference took.
+      $("dFast").textContent = `${n} object${n===1?"":"s"} · ${ageText(f.ageMs)} old`;
       $("dFast").className = ageCls(f.ageMs);
     }
 
     const s = perception.scene;
     if (!s) return;
     if (s.thinking || s.nextInMs > 0) $("caption").classList.add("show");
-    $("dScene").textContent = `${ageText(s.ageMs)} · ${((s.latencyMs||0)/1000).toFixed(1)}s`;
-    $("dScene").className = ageCls(s.ageMs);
+    // Judged against the observer's own cadence, matching the caption. On the
+    // absolute scale a perfectly healthy 10 s-old caption reads as a fault.
+    $("dScene").textContent = `${ageText(s.ageMs)} old · ${((s.latencyMs||0)/1000).toFixed(1)}s to answer`;
+    $("dScene").className = cadenceAgeCls(s.ageMs, s.intervalMs);
 
     if (s.text && s.text !== lastCaption) {
       lastCaption = s.text;
@@ -601,6 +641,7 @@
   }
 
   function drawOverlay() {
+    if (boxesHidden) return;
     const f = perception.fast;
     if (!f || !f.detections?.length || !f.width || !f.height) return;
     const sx = canvas.width / f.width, sy = canvas.height / f.height;
