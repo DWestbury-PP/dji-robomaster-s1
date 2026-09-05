@@ -127,8 +127,9 @@ them. Several exist because something surprising happened on a real floor.
 
 ## Licence
 
-[MIT](LICENSE), covering the code in this repository. DJI's UnityBridge library
-is proprietary and is not distributed here.
+[MIT](LICENSE), covering the code in this repository. Third-party terms —
+including DJI's proprietary UnityBridge, which is **not** distributed here — are
+in [NOTICE](NOTICE).
 
 ## Safety
 

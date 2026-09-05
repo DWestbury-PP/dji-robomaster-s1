@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This licence covers the code in this repository only.
-
-DJI's UnityBridge library is proprietary and is NOT distributed here.
-`scripts/install-bridge.sh` copies it from the `github.com/brunoga/robomaster`
-Go module cache onto your own machine. Model weights and any recorded frames
-are likewise not included.
