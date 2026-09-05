@@ -260,6 +260,7 @@ go test -cover ./internal/safety/ ./internal/driver/ ./internal/teleop/
 ./bin/s1teleop                      # console at http://localhost:8700
 ./bin/s1teleop -mock                # synthetic video, no robot needed
 ./bin/s1teleop -fps 10 -quality 60  # if the stream struggles
+./bin/s1teleop -speed-level medium  # robot-side gear; slow (default), medium, fast
 
 # measure it
 ./bin/s1probe -connect-only

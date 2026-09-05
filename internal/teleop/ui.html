@@ -94,6 +94,26 @@
     </div>
 
     <div class="panel">
+      <h2>Gears</h2>
+      <table class="hud">
+        <tr><td>drive</td><td id="tDrive" class="ok">—</td></tr>
+        <tr><td>turret</td><td id="tTurret" class="ok">—</td></tr>
+      </table>
+      <div class="row">
+        <button id="btnDriveDown">drive −</button>
+        <button id="btnDriveUp">drive +</button>
+      </div>
+      <div class="row">
+        <button id="btnTurretDown">turret −</button>
+        <button id="btnTurretUp">turret +</button>
+      </div>
+      <p class="keys" style="margin:10px 0 0">
+        Scales below the server's ceiling — the console can ask for less, never
+        more. The robot-side gear is a launch flag.
+      </p>
+    </div>
+
+    <div class="panel">
       <h2>Safety</h2>
       <button class="estop" id="btnEstop">■ E-STOP</button>
       <div class="row">
@@ -116,6 +136,8 @@
         <div><span>turret</span><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd></span></div>
         <div><span>fire</span><span><kbd>space</kbd></span></div>
         <div><span>e-stop</span><span><kbd>esc</kbd></span></div>
+        <div><span>drive gear</span><span><kbd>[</kbd><kbd>]</kbd></span></div>
+        <div><span>turret gear</span><span><kbd>,</kbd><kbd>.</kbd></span></div>
         <div><span>gamepad</span><span id="tPad">none</span></div>
       </div>
     </div>
@@ -136,10 +158,50 @@
   let ws = null, wsReady = false;
   let armed = false, estopped = false;
 
+  // Gears scale the stick *below* whatever ceiling the server enforces. Asking
+  // for less is always safe; asking for more is impossible, because the
+  // governor clamps regardless of what we send. The robot-side chassis gear —
+  // which changes actual speed per unit of deflection — is a launch flag, not
+  // a browser control, for exactly that reason.
+  const GEARS = [0.25, 0.50, 0.75, 1.00];
+  const GEAR_NAMES = ["crawl", "slow", "cruise", "full"];
+  let driveGear = load("driveGear", 2);    // cruise
+  let turretGear = load("turretGear", 1);  // slow — the turret felt twitchy at full
+  let ceilChassis = 0, ceilGimbal = 0;
+
+  function load(k, dflt) {
+    try { const v = parseInt(localStorage.getItem(k), 10); return Number.isInteger(v) && GEARS[v] !== undefined ? v : dflt; }
+    catch { return dflt; }
+  }
+  function save(k, v) { try { localStorage.setItem(k, String(v)); } catch {} }
+
+  function setGear(which, delta) {
+    if (which === "drive") {
+      driveGear = Math.max(0, Math.min(GEARS.length - 1, driveGear + delta));
+      save("driveGear", driveGear);
+    } else {
+      turretGear = Math.max(0, Math.min(GEARS.length - 1, turretGear + delta));
+      save("turretGear", turretGear);
+    }
+    renderGears();
+  }
+
+  function renderGears() {
+    const d = GEARS[driveGear], g = GEARS[turretGear];
+    $("tDrive").textContent  = `${GEAR_NAMES[driveGear]} · ${(d*100)|0}%` +
+      (ceilChassis ? ` → ${(d*ceilChassis).toFixed(2)}` : "");
+    $("tTurret").textContent = `${GEAR_NAMES[turretGear]} · ${(g*100)|0}%` +
+      (ceilGimbal ? ` → ${(g*ceilGimbal).toFixed(2)}` : "");
+  }
+
   addEventListener("keydown", e => {
     if (e.repeat) return;
     if (e.code === "Escape") { send({type:"estop"}); return; }
     if (e.code === "Space")  { e.preventDefault(); fire(); return; }
+    if (e.key === "[") { setGear("drive", -1);  return; }
+    if (e.key === "]") { setGear("drive", +1);  return; }
+    if (e.key === ",") { setGear("turret", -1); return; }
+    if (e.key === ".") { setGear("turret", +1); return; }
     keys.add(e.code);
     if (["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
   });
@@ -181,7 +243,8 @@
       if (pad.buttons[7] && pad.buttons[7].pressed) fire();
     }
     const cl = v => Math.max(-1, Math.min(1, v));
-    return { cx: cl(cx), cy: cl(cy), gx: cl(gx), gy: cl(gy) };
+    const d = GEARS[driveGear], g = GEARS[turretGear];
+    return { cx: cl(cx) * d, cy: cl(cy) * d, gx: cl(gx) * g, gy: cl(gy) * g };
   }
 
   function send(o) { if (wsReady) try { ws.send(JSON.stringify(o)); } catch {} }
@@ -232,6 +295,11 @@
     $("tReason").textContent = t.moving ? `moving (${t.reason})` : t.reason;
     $("tReason").className   = t.moving ? "ok" : (t.reason === "ok" || t.reason === "clamped" || t.reason === "deadman" || t.reason === "no-command") ? "dim" : "warn";
 
+    if (t.maxChassis !== ceilChassis || t.maxGimbal !== ceilGimbal) {
+      ceilChassis = t.maxChassis; ceilGimbal = t.maxGimbal;
+      renderGears();
+    }
+
     $("tRate").textContent   = `${t.cmdRateHz.toFixed(1)} Hz`;
     $("tRate").className     = t.cmdRateHz > 10 ? "ok" : "warn";
     $("tAge").textContent    = t.frameAgeMs < 0 ? "—" : `${t.frameAgeMs.toFixed(0)} ms`;
@@ -254,6 +322,11 @@
   $("btnArm").onclick    = () => send({type:"arm"});
   $("btnDisarm").onclick = () => send({type:"disarm"});
   $("btnFire").onclick   = fire;
+  $("btnDriveUp").onclick    = () => setGear("drive", +1);
+  $("btnDriveDown").onclick  = () => setGear("drive", -1);
+  $("btnTurretUp").onclick   = () => setGear("turret", +1);
+  $("btnTurretDown").onclick = () => setGear("turret", -1);
+  renderGears();
 
   // ---- video --------------------------------------------------------------
   // The MJPEG stream is parsed by hand rather than handed to <img src>, so the

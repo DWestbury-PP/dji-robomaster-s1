@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -39,8 +40,9 @@ var (
 	appID      = flag.Uint64("appid", 0, "Router mode: only connect to a robot announcing this app ID. 0 takes the first robot found — fine with one vehicle, not with two.")
 	streamFPS  = flag.Int("fps", 15, "Browser video rate. Encode costs ~23.6 ms/frame, so 30 would burn most of a core.")
 	quality    = flag.Int("quality", 70, "JPEG quality for the browser stream.")
-	maxChassis = flag.Float64("max-chassis", 0.35, "Chassis deflection clamp, fraction of full stick.")
-	maxGimbal  = flag.Float64("max-gimbal", 0.50, "Gimbal deflection clamp, fraction of full stick.")
+	maxChassis = flag.Float64("max-chassis", 0.60, "Hard ceiling on chassis deflection. The console can scale down from this but never past it.")
+	maxGimbal  = flag.Float64("max-gimbal", 0.70, "Hard ceiling on gimbal deflection. The console can scale down from this but never past it.")
+	speedLevel = flag.String("speed-level", "slow", "Robot-side chassis gear: slow, medium or fast. Startup only — it changes metres per second for the same deflection, so it is the operator's call, not the browser's.")
 	deadman    = flag.Duration("deadman", 250*time.Millisecond, "Stop the vehicle after this much producer silence.")
 	mock       = flag.Bool("mock", false, "Run with no robot: synthetic video and a sink that discards. For working on the UI.")
 	verbose    = flag.Bool("v", false, "Verbose bridge logging.")
@@ -123,7 +125,9 @@ func main() {
 	}()
 
 	fmt.Printf("\n  console:  http://%s\n", *addr)
-	fmt.Printf("  clamps:   chassis %.2f · gimbal %.2f · deadman %s\n", *maxChassis, *maxGimbal, *deadman)
+	fmt.Printf("  ceilings: chassis %.2f · gimbal %.2f · gear %s · deadman %s\n",
+		*maxChassis, *maxGimbal, *speedLevel, *deadman)
+	fmt.Printf("            the console scales down from these; it cannot exceed them\n")
 	fmt.Printf("  video:    %d fps, quality %d\n\n", *streamFPS, *quality)
 
 	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -133,6 +137,23 @@ func main() {
 	cancel()
 	wg.Wait()
 	log.Info("stopped; vehicle sent a final zero")
+}
+
+// parseSpeedLevel maps the flag to the robot-side gear. This is deliberately a
+// startup flag and not a console control: unlike the deflection clamp, raising
+// the gear changes how fast the vehicle actually travels for a given stick
+// position, so it is the operator's decision rather than the browser's.
+func parseSpeedLevel(s string) (robot.ChassisSpeedLevel, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "slow":
+		return robot.ChassisSpeedLevelSlow, nil
+	case "medium", "med":
+		return robot.ChassisSpeedLevelMedium, nil
+	case "fast":
+		return robot.ChassisSpeedLevelFast, nil
+	default:
+		return 0, fmt.Errorf("unknown speed level %q: want slow, medium or fast", s)
+	}
 }
 
 func signalContext() (context.Context, context.CancelFunc) {
@@ -181,9 +202,16 @@ func connectRobot(log *slog.Logger) (*robomaster.Client, func() teleop.Status, f
 	if err := c.Robot().EnableFunction(robot.FunctionTypeGunControl, true); err != nil {
 		log.Warn("enabling gun control", "err", err)
 	}
-	if lvl, err := c.Robot().ChassisSpeedLevel(); err == nil {
-		_ = c.Robot().SetChassisSpeedLevel(robot.ChassisSpeedLevelSlow)
-		log.Info("chassis speed level set to slow", "previous", lvl)
+	lvl, err := parseSpeedLevel(*speedLevel)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if prev, err := c.Robot().ChassisSpeedLevel(); err == nil {
+		if err := c.Robot().SetChassisSpeedLevel(lvl); err != nil {
+			log.Warn("setting chassis speed level", "err", err)
+		} else {
+			log.Info("chassis speed level set", "level", *speedLevel, "previous", prev)
+		}
 	}
 
 	log.Info("connected", "devices", c.Robot().Devices())
