@@ -59,7 +59,8 @@ layer that stops the vehicle when anything goes quiet.
 | Under motion | drive motors, strafes and 360° rotation change nothing |
 | Link | router mode — jitter **3.3 ms σ**, ~7× better than the robot's own AP |
 | Control | 20 Hz rate commands under a 250 ms deadman |
-| Tests | **36** (48 with subtests), race-clean |
+| Observer | `gemma4:e4b` narrating in prose every 20 s, 1.6–3.7 s per caption |
+| Tests | **41** (53 with subtests), race-clean |
 
 Next is M4 — publishing `frames` onto foveate's bus so YOLO and the VLM can
 narrate the robot's view. See [docs/STATUS.md](docs/STATUS.md) for where things
@@ -70,6 +71,7 @@ stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
 ./scripts/install-bridge.sh && ./scripts/build.sh
 ./bin/s1find              # where is the robot?
 ./bin/s1teleop            # console at http://localhost:8700
+./bin/s1narrate -v        # the observer, in its own process
 ./bin/s1teleop -mock      # no robot needed
 ```
 
@@ -86,4 +88,5 @@ stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
 | [docs/M1-RUNBOOK.md](docs/M1-RUNBOOK.md) | Offline field card for working with the robot |
 | [docs/M3.md](docs/M3.md) | The browser console: running it, controls, what it measures |
 | [docs/M4.md](docs/M4.md) | Perception transport: cadence classes, and why observations are dated |
+| [docs/BAKEOFF.md](docs/BAKEOFF.md) | Model comparison on real frames — local and hosted, and what it settled |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |

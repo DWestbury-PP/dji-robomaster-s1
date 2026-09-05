@@ -9,9 +9,22 @@
 
 ## Where things stand (2026-09-04)
 
-**A working control system.** M0–M3 complete, all verified on hardware: a stock,
-unmodified S1 driven from a browser with live video, through a safety layer that
-stops the vehicle whenever anything goes quiet.
+**A working control system with an observer aboard.** A stock, unmodified S1
+driven from a browser over the house Wi-Fi, through a safety layer that stops
+the vehicle whenever anything goes quiet, while a local vision model narrates
+what it sees.
+
+| | |
+|---|---|
+| Transport | app-mode UnityBridge, **router mode**, stock firmware 00.06.0518 |
+| Video | 1280×720 @ 30 fps, jitter **3.3 ms σ**, 0.25 cores under Rosetta |
+| Control | 20 Hz rate commands, 250 ms deadman, live gears, e-stop |
+| Console | full-bleed cockpit, movable narration, drawer for everything else |
+| Observer | `gemma4:e4b` prose caption every 20 s, **1.6–3.7 s** per caption |
+| Tests | 41 top-level (53 with subtests), race-clean |
+
+**Nothing a model produces actuates anything** (DECISIONS.md #15). Motion is
+entirely manual.
 
 ## M0 result — Path A is closed, Path B is selected
 
@@ -54,8 +67,16 @@ See ARCHITECTURE.md §7.
 | arm64 bridge spike | investigated, **deferred** (DECISIONS.md #11) |
 | M2 — safety layer (Go) | ✅ done — 25 tests; `-safety-demo` hardware proof still outstanding |
 | M3 — browser teleop | ✅ **done — driven on hardware, controls confirmed** |
-| M4 — frames into foveate | **next** — blocked on foveate's M8 (multi-camera) |
-| M5–M7 — intentions, autonomy, mobile | not started |
+| M3.5 — router mode | ✅ adopted — jitter ~7× better than the robot's own AP |
+| M3.6–3.8 — gears, cockpit UI, movable narration | ✅ done |
+| M4 — perception transport | ✅ done (DECISIONS.md #14) |
+| M4.1 — model bake-off | ✅ done — [BAKEOFF.md](BAKEOFF.md) |
+| M4.2 — fast tier: YOLO boxes | **next** |
+| M4.3 — scene tier: `s1narrate` | ✅ **done — narrating live** |
+| M4.4 — the experience log | not started — the one-way door, see below |
+| M4.5 — advisory looming highlight | not started |
+| M5 — mobile app | not started |
+| ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
 
 ## M1 complete — GO
 
@@ -137,6 +158,34 @@ robot off and on and run `./bin/s1find` **without opening the app**. If it is
 found, the app is never needed again; if not, the credentials do not persist
 and that is worth knowing before relying on it.
 
+## What M4 established
+
+The bake-off ([BAKEOFF.md](BAKEOFF.md)) scored candidates on 250 real frames
+from this house. Two findings shaped everything after it:
+
+1. **Every model is good at describing and bad at deciding.** gemma4 wrote "the
+   path directly ahead is partially obstructed by stacked plastic bins" and in
+   the same response returned `clear_path: ahead`, `obstacles: []`. qwen2.5vl
+   failed identically in the other direction. That is the constraint tax:
+   grammar-constrained decoding guarantees an answer's *shape* and nothing about
+   its truth.
+2. **Hosted models are not faster, but they are far better at deciding.** Local
+   gemma4 beat Haiku, Sonnet and Opus on latency; Opus alone spotted a second
+   tracked robot and a person that local models missed entirely — verified by
+   eye, not assumed.
+
+Both are now moot for the current design, because #15 stopped asking models to
+decide at all. What survives is #16: the scene tier narrates in free prose from
+a **local** model, which is what these models were always good at — and dropping
+the schema roughly **halved** the latency as well.
+
+## The one-way door
+
+**M4.4 (the experience log) is the only item with a deadline.** Frames and
+detections can be regenerated from a corpus at any time. *What the operator did
+while looking at a given frame* exists only if captured at that moment. Every
+drive before M4.4 is demonstration data that cannot be recovered.
+
 ## Open questions
 
 1. **Key discovery.** The bridge is a reverse-engineered key/value + event API;
@@ -162,6 +211,16 @@ and that is worth knowing before relying on it.
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 4 (2026-09-05, afternoon).** Built the perception transport, the
+corpus tool and the bake-off harness; scored local and hosted models on 250 real
+frames and recorded the result. Narrowed scope to observe-and-log (#15), which
+made the scene tier a prose narrator on a local model (#16). Rebuilt the console
+as a cockpit (#17), added an honest two-phase cadence readout (#18), and moved
+the narration out of the floor's way after driving showed it occluding the
+nearest ground (#19). Fixed a power-cycle bug that silently disabled movement
+while everything looked healthy, and a HUD that had been claiming a connected
+robot for an hour while the vehicle was off.
 
 **Session 3 (2026-09-05).** Operator moved the S1 onto the house network.
 Confirmed it announces itself autonomously with no app running, built `s1find`
