@@ -361,3 +361,59 @@ governor.
 latency and reliable spatial output appears (re-run the bake-off, that is what
 it is for); or the logged corpus is large enough to train a policy worth
 evaluating.
+
+---
+
+### 16. The scene tier narrates; it does not fill in forms
+
+**Decision.** The scene tier runs a **local** model producing **free prose** — a
+short caption of what the robot is looking at. No JSON schema, no structured
+fields, no hosted API.
+
+**Why.** #15 removed the requirements that made the hard choices hard. Nothing
+downstream parses the output, nothing acts on it, and it is off the critical
+path — so cost, latency and schema compliance stop being constraints, and the
+only thing that matters is whether the caption is vivid and true.
+
+That plays to exactly what the bake-off showed these models are *good* at. Local
+models wrote "a dense, linear arrangement of stacked plastic bins" and correctly
+named an aquarium. What they were bad at was `clear_path` and `blocking` — the
+fields we no longer ask for. **Grammar-constrained decoding was producing the
+worst of the output**, not the best: `hazards: ["near","blocking"]` was the
+schema forcing a shape onto a model that had nothing to put in it.
+
+**A candidate this revives.** Qwen3-VL was disqualified for latency — it reasons
+for 15–50 s and ignores `think:false`. For a narrator at one caption every
+20 seconds, off the critical path, that is fine. It is a newer and more capable
+model than gemma4:e4b and deserves re-testing on prose quality, which is a
+different bake-off from the one we ran.
+
+**Revisit if.** Anything downstream starts consuming the caption as data. The
+moment a machine reads it, structure and its failure modes come back.
+
+---
+
+### 17. The console is a cockpit, not a dashboard
+
+**Decision.** Full-bleed video with floating translucent chrome that fades while
+driving; secondary controls in a drawer one keystroke away; narration as a
+lower-third band that always states its own age.
+
+**Why.** The previous layout weighted everything equally — a diagnostic tool
+built to debug a control loop, which is what it was. Under #15 this is a
+*driving experience with an observer aboard*, and the video is the subject.
+Chrome that recedes after four seconds and returns on any input gives the view
+back without hiding anything.
+
+**Two rules the layout must never break:**
+
+1. **The e-stop never fades and never moves.** It is excluded from the idle
+   fade, fixed bottom-right, and reachable by <kbd>Esc</kbd>.
+2. **A caption always renders its age.** Beside live video, an unlabelled
+   description is read as a statement about now; at seven seconds and half a
+   room away that is false.
+
+**Found while building it.** The banner and the status chips both sat at the top
+of the viewport, and the banner won on z-index — so battery and link state were
+hidden at exactly the moment something had gone wrong. The bar now offsets when
+a banner is showing.
