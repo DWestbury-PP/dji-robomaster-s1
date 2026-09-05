@@ -51,7 +51,8 @@ See ARCHITECTURE.md §7.
 | M0 — firmware triage, transport choice | ✅ done — Path B |
 | M1 — link + latency harness | ✅ **done — GO** (ARCHITECTURE.md §6) |
 | arm64 bridge spike | investigated, **deferred** (DECISIONS.md #11) |
-| M2 — safety layer (Go) | **next** |
+| M2 — safety layer (Go) | ✅ done — 25 tests, hardware proof pending |
+| M3 — browser teleop | 🔨 built and tested in mock; needs the vehicle |
 | M3 — browser teleop | not started |
 | M4 — video into foveate | not started |
 | M5–M7 — intentions, autonomy, mobile | not started |

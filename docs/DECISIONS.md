@@ -239,3 +239,40 @@ safety preference, it is the only thing the robot responds to.
 
 **Revisit if.** We move to Path C, where we own the wire and can have real
 acknowledgements.
+
+---
+
+### 13. The teleop console is served from the Go driver process
+
+**Decision.** `s1teleop` serves MJPEG, the command/telemetry WebSocket and the
+static UI from the same process that holds the DJI bridge. It does not go
+through Redis, and it is not the Python FastAPI service #1 originally implied.
+
+**Why.** Three measured facts, none of which were known when the design was
+written:
+
+1. **The bridge handle is process-wide** (#9), so decoded frames are already in
+   the Go process. Any bus-mediated route means getting them *out* again.
+2. **JPEG encode costs 23.6 ms per frame** (ARCHITECTURE.md §6). Routing video
+   Go → frame store → Python → browser pays that twice, plus a disk round trip,
+   on the most latency-sensitive path in the system.
+3. The safety governor is already in Go and must stay on the last hop (#6). A
+   Python console would sit upstream of it regardless, so moving the console
+   does not buy any safety property.
+
+Adding Redis and Docker as prerequisites for *manual control* is also the wrong
+dependency shape: the console should work when the perception stack is down.
+
+**What this does not change.** The bus still earns its place for the two things
+it was chosen for — publishing `frames` to foveate, and carrying `intentions`
+from the autonomy loop (M5+). Those are throughput-tolerant and genuinely
+cross-process. The human control path simply should not pay for them.
+
+**Consequence worth naming.** The console encodes **once per published frame**
+regardless of how many browsers are watching, and drops frames between encodes
+rather than queueing — a teleop view wants the newest frame, never a backlog.
+Browser stream rate defaults to 15 fps because 30 would spend most of a core on
+encoding alone.
+
+**Revisit if.** A second consumer needs the same video, or the console has to be
+reachable from somewhere the driver process is not.
