@@ -69,6 +69,18 @@
   #capText{font:400 16px/1.55 var(--ui);letter-spacing:.005em}
   #capMeta{margin-top:7px;font:11px var(--mono);color:var(--dim);
            display:flex;gap:10px;align-items:center}
+  #capMeta .push{margin-left:auto}
+
+  /* The cadence readout. A countdown to the next capture is exact because we
+     control it; how long the model will then take is not knowable, so that
+     phase counts up and shows a rolling typical instead of a fake estimate. */
+  #capBar{margin-top:9px;height:2px;border-radius:2px;background:rgba(255,255,255,.10);
+          overflow:hidden}
+  #capBar i{display:block;height:100%;width:0;background:var(--accent);
+            transition:width .25s linear}
+  #capBar.thinking i{width:35%;background:var(--ok);
+                     animation:sweep 1.15s ease-in-out infinite}
+  @keyframes sweep{0%{margin-left:-35%}100%{margin-left:100%}}
 
   #hint{position:fixed;left:0;right:0;bottom:18px;text-align:center;z-index:5;
         font:11px var(--mono);color:var(--dim);letter-spacing:.06em;
@@ -138,7 +150,12 @@
 
 <div id="caption">
   <div id="capText"></div>
-  <div id="capMeta"><span id="capAge">—</span><span class="dim" id="capModel"></span></div>
+  <div id="capMeta">
+    <span id="capAge">—</span>
+    <span class="dim" id="capModel"></span>
+    <span class="push" id="capNext"></span>
+  </div>
+  <div id="capBar"><i></i></div>
 </div>
 
 <div id="hint" class="chrome">
@@ -344,7 +361,19 @@
   }
 
   const ageText = ms => ms == null ? "—" : ms < 1000 ? `${ms|0} ms` : `${(ms/1000).toFixed(1)} s`;
+
+  // Absolute thresholds, for things that should be current — video, detections.
   const ageCls  = ms => ms == null ? "dim" : ms < 300 ? "ok" : ms < 1500 ? "warn" : "bad";
+
+  // Relative to a tier's own cadence, for things that are periodic by design.
+  // Falls back to the absolute scale until the interval is known.
+  function cadenceAgeCls(ms, intervalMs) {
+    if (ms == null) return "dim";
+    if (!intervalMs) return ageCls(ms);
+    if (ms < intervalMs)     return "dim";   // fresher than the next cycle
+    if (ms < intervalMs * 2) return "warn";  // a cycle has been missed
+    return "bad";                            // the observer has gone quiet
+  }
 
   function hud(t) {
     if (t.type !== "tel") return;
@@ -400,6 +429,7 @@
 
     const s = perception.scene;
     if (!s) return;
+    if (s.thinking || s.nextInMs > 0) $("caption").classList.add("show");
     $("dScene").textContent = `${ageText(s.ageMs)} · ${((s.latencyMs||0)/1000).toFixed(1)}s`;
     $("dScene").className = ageCls(s.ageMs);
 
@@ -415,8 +445,44 @@
     if (s.text) {
       // The caption describes a frame from seconds ago. Say so, always — beside
       // live video it would otherwise read as a statement about now.
+      //
+      // But judge that age against the tier's own cadence, not the detector's.
+      // At a 20 s interval a caption is inherently several seconds old; painting
+      // that red would cry fault at the design working exactly as intended.
+      // Alarming is reserved for a caption older than the cycle that should
+      // already have replaced it.
       $("capAge").textContent = `${ageText(s.ageMs)} ago`;
-      $("capAge").className = ageCls(s.ageMs);
+      $("capAge").className = cadenceAgeCls(s.ageMs, s.intervalMs);
+    }
+    renderCadence(s);
+  }
+
+  // Two honest phases. Counting down to the next capture is exact, because the
+  // narrator's cadence is ours. How long the model will then take is not
+  // something we can know, so that phase counts up and offers a rolling
+  // typical — an expectation, never a promise.
+  function renderCadence(s) {
+    const bar = $("capBar"), fill = bar.firstElementChild, next = $("capNext");
+    const typical = s.typicalMs ? ` · usually ~${(s.typicalMs/1000).toFixed(0)}s` : "";
+
+    if (s.thinking) {
+      bar.classList.add("thinking");
+      fill.style.width = "";
+      next.textContent = `observing ${((s.elapsedMs||0)/1000).toFixed(0)}s${typical}`;
+      next.className = "push ok";
+      return;
+    }
+
+    bar.classList.remove("thinking");
+    if (s.nextInMs > 0 && s.intervalMs > 0) {
+      const done = 1 - (s.nextInMs / s.intervalMs);
+      fill.style.width = `${Math.max(0, Math.min(1, done)) * 100}%`;
+      next.textContent = `next in ${(s.nextInMs/1000).toFixed(0)}s`;
+      next.className = "push dim";
+    } else {
+      fill.style.width = "0%";
+      next.textContent = typical ? typical.replace(" · ", "") : "";
+      next.className = "push dim";
     }
   }
 

@@ -417,3 +417,32 @@ back without hiding anything.
 of the viewport, and the banner won on z-index — so battery and link state were
 hidden at exactly the moment something had gone wrong. The bar now offsets when
 a banner is showing.
+
+---
+
+### 18. A cadence readout that only claims what it knows
+
+**Decision.** Between captions the console counts **down** to the next capture;
+while the model is working it counts **up**, alongside a rolling median of
+recent completions labelled "usually ~Ns". A caption's age is judged against
+its own tier's cadence, not an absolute scale.
+
+**Why.** A single countdown would have to lie. We control when the next frame
+is taken, so that part is exact — but how long a model then takes is genuinely
+unpredictable, and the bake-off measured the same family of models spanning
+1.6 s to 50 s. Presenting a guess as a countdown would make the console less
+trustworthy the moment it was wrong, and it would be wrong often.
+
+So the two phases are reported differently on purpose: a proportion bar and an
+exact number for the part we know, an elapsed counter and an explicitly hedged
+typical for the part we do not.
+
+**The age scale follows the same principle.** At a 20 s cadence a caption is
+*inherently* several seconds old — that is the design working. Painting it red
+on the absolute scale used for video and detections would cry fault at correct
+behaviour. Scene-tier age is therefore judged relative to the tier's own
+interval: unremarkable below one cycle, a warning past it, alarming only when
+the observer has actually gone quiet.
+
+**Fast tiers keep the absolute scale**, because for a detector old genuinely is
+broken.

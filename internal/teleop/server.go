@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ws", s.handleWS)
 	mux.HandleFunc("GET /frame.jpg", s.handleFrame)
 	mux.HandleFunc("POST /perception", s.handlePerception)
+	mux.HandleFunc("POST /perception/pending", s.handlePending)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
