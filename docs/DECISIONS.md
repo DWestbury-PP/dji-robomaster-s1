@@ -276,3 +276,37 @@ encoding alone.
 
 **Revisit if.** A second consumer needs the same video, or the console has to be
 reachable from somewhere the driver process is not.
+
+---
+
+### 14. Perception talks HTTP to the driver, not Redis
+
+**Decision.** Tiers pull frames from `s1teleop` over HTTP — `/stream` for
+consumers that keep up, `/frame.jpg` for those that do not — and post results
+back to `/perception`. No broker, no disk frame store.
+
+**Why.** The bus exists to stop a slow consumer gating a fast one and to share
+pixels between processes. We get the first from `FrameHub`, which already lets
+each consumer take the newest frame independently while the encoder waits on
+nobody. We do not need the second: the frames are already encoded once for the
+browser, so a bus route would pay the 23.6 ms encode twice and add a disk round
+trip, on a robot that otherwise needs neither Docker nor Redis.
+
+**The part that is not obvious.** Push and pull are not interchangeable here. A
+pushed stream buffers frames in the socket while a slow tier thinks, so an 8.5 s
+model would reason about a scene from 8 seconds ago — the exact coupling the bus
+was meant to remove, smuggled back in by the transport. Slow tiers must pull.
+
+**What this costs.** Replay, durability and consumer groups. Fine today; if we
+want to re-run a model over a recorded drive, a broker earns its place, and the
+observation schema is what we would replay into it.
+
+**Not adopted from foveate, deliberately.** Its capture service (we have the
+camera), its frame store (we have the frames), its monitor (we have a better
+console), and its process-per-tier stack. **Adopted:** the tiering idea, the
+fusion principle, the schema vocabulary, and above all its **benchmarks** —
+which are why we start from yolo11s on ONNX/CoreML and qwen2.5vl:7b rather than
+re-deriving both.
+
+**Revisit if.** Perception moves to another host and needs reconnect semantics,
+or we want recorded drives replayed through new models.

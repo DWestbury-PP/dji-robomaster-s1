@@ -94,6 +94,18 @@
     </div>
 
     <div class="panel">
+      <h2>Perception</h2>
+      <table class="hud">
+        <tr><td>fast tier</td><td id="tFast" class="dim">—</td></tr>
+        <tr><td>scene tier</td><td id="tScene" class="dim">—</td></tr>
+      </table>
+      <p id="tSceneText" class="keys" style="margin:10px 0 0;color:var(--ink)">
+        <span class="dim">no scene description yet</span>
+      </p>
+      <p id="tHazards" class="keys" style="margin:8px 0 0"></p>
+    </div>
+
+    <div class="panel">
       <h2>Gears</h2>
       <table class="hud">
         <tr><td>drive</td><td id="tDrive" class="ok">—</td></tr>
@@ -300,6 +312,8 @@
       renderGears();
     }
 
+    renderPerception(t.perception);
+
     $("tRate").textContent   = `${t.cmdRateHz.toFixed(1)} Hz`;
     $("tRate").className     = t.cmdRateHz > 10 ? "ok" : "warn";
     $("tAge").textContent    = t.frameAgeMs < 0 ? "—" : `${t.frameAgeMs.toFixed(0)} ms`;
@@ -334,6 +348,78 @@
   // this milestone: our latency budget only ever saw frames arriving in the Go
   // process, never what a viewer actually gets.
   let frames = 0, fpsAt = performance.now();
+
+  // Newest observation per tier, from telemetry. Boxes are drawn over the live
+  // frame, but they describe an *older* frame — how much older is shown, never
+  // implied. A stale box on a moving robot is worse than no box.
+  let perception = {};
+
+  // Age thresholds for how a detection is drawn. A fast tier keeps up; anything
+  // beyond a couple of frames is drawn dimmer to say so honestly.
+  const BOX_FRESH_MS = 150, BOX_STALE_MS = 600;
+
+  function drawOverlay() {
+    const f = perception.fast;
+    if (!f || !f.detections || !f.detections.length) return;
+    if (!f.width || !f.height) return;
+
+    const sx = canvas.width / f.width, sy = canvas.height / f.height;
+    const age = f.ageMs || 0;
+    const fresh = age <= BOX_FRESH_MS;
+    const stale = age > BOX_STALE_MS;
+
+    ctx.save();
+    ctx.lineWidth = Math.max(2, canvas.width / 640);
+    ctx.font = `${Math.max(12, canvas.width/80)}px ui-monospace, monospace`;
+    ctx.globalAlpha = stale ? 0.35 : fresh ? 1 : 0.7;
+    ctx.strokeStyle = stale ? "#f85149" : "#3fb950";
+    ctx.fillStyle = ctx.strokeStyle;
+
+    for (const d of f.detections) {
+      const [x1, y1, x2, y2] = d.box;
+      const X = x1 * sx, Y = y1 * sy, W = (x2 - x1) * sx, H = (y2 - y1) * sy;
+      ctx.strokeRect(X, Y, W, H);
+      const label = `${d.label} ${(d.confidence * 100) | 0}%`;
+      const tw = ctx.measureText(label).width + 8;
+      ctx.globalAlpha = (stale ? 0.35 : 0.85);
+      ctx.fillRect(X, Math.max(0, Y - 20), tw, 18);
+      ctx.fillStyle = "#0d1117";
+      ctx.fillText(label, X + 4, Math.max(13, Y - 6));
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.globalAlpha = stale ? 0.35 : fresh ? 1 : 0.7;
+    }
+    ctx.restore();
+  }
+
+  function ageClass(ms)  { return ms == null ? "dim" : ms < 300 ? "ok" : ms < 1500 ? "warn" : "bad"; }
+  function ageText(ms)   { return ms == null ? "—" : ms < 1000 ? `${ms|0} ms` : `${(ms/1000).toFixed(1)} s`; }
+
+  function renderPerception(p) {
+    perception = p || {};
+
+    const f = perception.fast;
+    if (f) {
+      const n = (f.detections || []).length;
+      $("tFast").textContent = `${n} object${n===1?"":"s"} · ${ageText(f.ageMs)} old · ${(f.latencyMs||0).toFixed(0)} ms`;
+      $("tFast").className = ageClass(f.ageMs);
+    }
+
+    const s = perception.scene;
+    if (s) {
+      $("tScene").textContent = `${ageText(s.ageMs)} old · ${((s.latencyMs||0)/1000).toFixed(1)} s to answer`;
+      $("tScene").className = ageClass(s.ageMs);
+      if (s.text) {
+        // The age prefix is not decoration. At nine seconds and half a room
+        // away, an unlabelled description reads as a statement about now.
+        $("tSceneText").innerHTML =
+          `<span class="${ageClass(s.ageMs)}">[${ageText(s.ageMs)} ago]</span> ` +
+          s.text.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+      }
+      const hz = s.hazards || [];
+      $("tHazards").innerHTML = hz.length
+        ? `<span class="bad">hazards: ${hz.map(h => h.replace(/[<>&]/g,'')).join(", ")}</span>` : "";
+    }
+  }
 
   async function streamVideo() {
     try {
@@ -381,6 +467,7 @@
       $("tRes").textContent = `${bmp.width}×${bmp.height}`;
       ctx.drawImage(bmp, 0, 0);
       bmp.close();
+      drawOverlay();
       $("placeholder").style.display = "none";
       frames++;
     } catch {}

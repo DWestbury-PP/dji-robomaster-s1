@@ -251,3 +251,182 @@ func TestFrameHubRejectsMalformedFrames(t *testing.T) {
 		t.Fatal("malformed frame was accepted")
 	}
 }
+
+// ---- perception transport (M4) ---------------------------------------------
+
+func pushFrame(t *testing.T, hub *FrameHub, stop chan struct{}) {
+	t.Helper()
+	pix := make([]byte, 16*16*3)
+	hub.Submit(pix, 16, 16)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := hub.Newest(); ok {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("hub never produced a frame")
+}
+
+func TestFramePullReturnsIdentityHeaders(t *testing.T) {
+	gov := safety.New(safety.Config{})
+	hub := NewFrameHub(70)
+	stop := make(chan struct{})
+	defer close(stop)
+	go hub.Run(stop, 60)
+
+	s := New(Config{}, gov, hub)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	// Before any frame exists the endpoint must say so rather than lie.
+	res, err := ts.Client().Get(ts.URL + "/frame.jpg")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 503 {
+		t.Fatalf("want 503 with no frame, got %d", res.StatusCode)
+	}
+
+	pushFrame(t, hub, stop)
+
+	res, err = ts.Client().Get(ts.URL + "/frame.jpg")
+	if err != nil || res.StatusCode != 200 {
+		t.Fatalf("get frame: %v %v", err, res.StatusCode)
+	}
+	defer res.Body.Close()
+
+	if ct := res.Header.Get("Content-Type"); ct != "image/jpeg" {
+		t.Fatalf("wrong content type %q", ct)
+	}
+	// A consumer must be able to date its result without decoding the image.
+	for _, h := range []string{"X-Frame-Seq", "X-Frame-Captured-Unix-Ms", "X-Frame-Width", "X-Frame-Height"} {
+		if res.Header.Get(h) == "" {
+			t.Fatalf("missing identity header %s", h)
+		}
+	}
+}
+
+// A slow consumer that pulls must always get the current frame, never a queued
+// stale one. This is the property that keeps a nine-second tier from reasoning
+// about a scene the robot has already left.
+func TestPullAlwaysReturnsNewestNotQueued(t *testing.T) {
+	hub := NewFrameHub(70)
+	stop := make(chan struct{})
+	defer close(stop)
+	go hub.Run(stop, 60)
+
+	pix := make([]byte, 16*16*3)
+	hub.Submit(pix, 16, 16)
+	deadline := time.Now().Add(2 * time.Second)
+	var first Frame
+	for time.Now().Before(deadline) {
+		if f, ok := hub.Newest(); ok {
+			first = f
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if first.Seq == 0 {
+		t.Fatal("no first frame")
+	}
+
+	// Several frames pass while our imaginary consumer is thinking.
+	for i := 0; i < 5; i++ {
+		hub.Submit(pix, 16, 16)
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	second, ok := hub.Newest()
+	if !ok {
+		t.Fatal("no frame after churn")
+	}
+	if second.Seq <= first.Seq {
+		t.Fatalf("pull returned a stale frame: seq %d then %d", first.Seq, second.Seq)
+	}
+}
+
+func TestPerceptionResultsReachTelemetryWithAge(t *testing.T) {
+	ts, _, _ := newTestServer(t, safety.Config{})
+	c, ctx, cancel := dial(t, ts)
+	defer cancel()
+
+	captured := time.Now().Add(-9 * time.Second) // a slow tier's frame
+	body, _ := json.Marshal(Observation{
+		Tier: "scene", Model: "qwen2.5vl:7b",
+		FrameSeq: 42, CapturedAt: captured, LatencyMs: 8500,
+		Width: 1280, Height: 720,
+		Text: "a corridor with a chair on the left",
+	})
+	res, err := ts.Client().Post(ts.URL+"/perception", "application/json", strings.NewReader(string(body)))
+	if err != nil || res.StatusCode != 204 {
+		t.Fatalf("post observation: %v %v", err, res.StatusCode)
+	}
+	res.Body.Close()
+
+	tel, ok := readUntil(t, c, ctx, func(tl telemetry) bool { return tl.Perception["scene"].Tier == "scene" })
+	if !ok {
+		t.Fatal("observation never reached telemetry")
+	}
+	got := tel.Perception["scene"]
+	if got.Text == "" || got.Model != "qwen2.5vl:7b" {
+		t.Fatalf("observation mangled: %+v", got)
+	}
+	// The age must reflect when the FRAME was captured, not when we received
+	// the result — otherwise nine-second-old narration reads as current.
+	if got.AgeMs < 8000 {
+		t.Fatalf("age understates staleness: %.0f ms for a 9 s old frame", got.AgeMs)
+	}
+}
+
+func TestPerceptionRejectsObservationWithoutTier(t *testing.T) {
+	ts, _, _ := newTestServer(t, safety.Config{})
+	res, err := ts.Client().Post(ts.URL+"/perception", "application/json",
+		strings.NewReader(`{"model":"x","text":"y"}`))
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 400 {
+		t.Fatalf("want 400 for a tierless observation, got %d", res.StatusCode)
+	}
+}
+
+// Tiers must not overwrite each other: a fast detector and a slow scene model
+// are different beliefs about the same world, held simultaneously.
+func TestTiersAreIndependent(t *testing.T) {
+	ts, _, _ := newTestServer(t, safety.Config{})
+	c, ctx, cancel := dial(t, ts)
+	defer cancel()
+
+	for _, o := range []Observation{
+		{Tier: "fast", Model: "yolo11s", FrameSeq: 100, CapturedAt: time.Now(),
+			Detections: []Detection{{Label: "chair", Confidence: 0.9, Box: [4]float64{1, 2, 3, 4}}}},
+		{Tier: "scene", Model: "qwen2.5vl:7b", FrameSeq: 90, CapturedAt: time.Now().Add(-8 * time.Second),
+			Text: "a room"},
+	} {
+		b, _ := json.Marshal(o)
+		res, err := ts.Client().Post(ts.URL+"/perception", "application/json", strings.NewReader(string(b)))
+		if err != nil {
+			t.Fatalf("post %s: %v", o.Tier, err)
+		}
+		res.Body.Close()
+	}
+
+	tel, ok := readUntil(t, c, ctx, func(tl telemetry) bool {
+		return len(tl.Perception) == 2
+	})
+	if !ok {
+		t.Fatal("both tiers never appeared together")
+	}
+	if len(tel.Perception["fast"].Detections) != 1 {
+		t.Fatalf("fast tier lost its detections: %+v", tel.Perception["fast"])
+	}
+	if tel.Perception["scene"].Text == "" {
+		t.Fatalf("scene tier lost its text: %+v", tel.Perception["scene"])
+	}
+	if tel.Perception["scene"].AgeMs <= tel.Perception["fast"].AgeMs {
+		t.Fatal("the slow tier should be visibly older than the fast one")
+	}
+}

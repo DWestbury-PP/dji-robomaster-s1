@@ -24,15 +24,40 @@ import (
 type FrameHub struct {
 	quality int
 
-	mu      sync.Mutex
-	raw     []byte // newest raw RGB24, owned by us
-	rawW    int
-	rawH    int
-	rawSeq  uint64
-	encSeq  uint64
-	jpeg    []byte
-	encAt   time.Time
-	updated chan struct{} // closed and replaced on each new JPEG
+	mu         sync.Mutex
+	raw        []byte // newest raw RGB24, owned by us
+	rawW       int
+	rawH       int
+	rawSeq     uint64
+	rawAt      time.Time
+	encSeq     uint64
+	jpeg       []byte
+	encAt      time.Time
+	capturedAt time.Time // when the frame in `jpeg` was captured, not encoded
+	encW, encH int
+	updated    chan struct{} // closed and replaced on each new JPEG
+}
+
+// Frame is an encoded frame with the identity a consumer needs to date its own
+// output. Perception results carry these back so the console can show how old
+// an observation is — essential when one tier runs at 100 Hz and another takes
+// nine seconds (docs/M4.md).
+type Frame struct {
+	JPEG []byte
+	// Seq is the capture sequence number; it identifies this exact frame.
+	Seq uint64
+	// CapturedAt is when the camera produced it, NOT when we encoded it.
+	CapturedAt time.Time
+	Width      int
+	Height     int
+}
+
+// Age is how long ago this frame was captured.
+func (f Frame) Age() time.Duration {
+	if f.CapturedAt.IsZero() {
+		return 0
+	}
+	return time.Since(f.CapturedAt)
 }
 
 func NewFrameHub(quality int) *FrameHub {
@@ -59,6 +84,7 @@ func (h *FrameHub) Submit(pix []byte, w, height int) {
 	copy(h.raw, pix)
 	h.rawW, h.rawH = w, height
 	h.rawSeq++
+	h.rawAt = time.Now()
 }
 
 // Run encodes the newest raw frame at fps until ctx-like stop is closed.
@@ -81,6 +107,7 @@ func (h *FrameHub) Run(stop <-chan struct{}, fps int) {
 				continue // nothing new since the last encode
 			}
 			seq := h.rawSeq
+			capturedAt := h.rawAt
 			w, ht := h.rawW, h.rawH
 			src := make([]byte, len(h.raw))
 			copy(src, h.raw)
@@ -97,6 +124,8 @@ func (h *FrameHub) Run(stop <-chan struct{}, fps int) {
 			h.jpeg = out
 			h.encSeq = seq
 			h.encAt = time.Now()
+			h.capturedAt = capturedAt
+			h.encW, h.encH = w, ht
 			close(h.updated)
 			h.updated = make(chan struct{})
 			h.mu.Unlock()
@@ -110,6 +139,28 @@ func (h *FrameHub) Latest() ([]byte, <-chan struct{}) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.jpeg, h.updated
+}
+
+// Newest returns the current frame with its identity, for consumers that pull
+// on their own schedule rather than being pushed to.
+//
+// This is the access pattern for slow tiers. A pushed stream would queue stale
+// frames in the socket while a slow consumer thinks, so by the time it read one
+// it would be reasoning about a scene that had passed. Pulling makes that
+// impossible: you ask when you are ready, and you get what is true now.
+func (h *FrameHub) Newest() (Frame, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.jpeg) == 0 {
+		return Frame{}, false
+	}
+	return Frame{
+		JPEG:       h.jpeg,
+		Seq:        h.encSeq,
+		CapturedAt: h.capturedAt,
+		Width:      h.encW,
+		Height:     h.encH,
+	}, true
 }
 
 // AgeMs is how long ago the newest frame was encoded — the HUD's honest answer
