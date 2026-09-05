@@ -127,23 +127,70 @@ Putting this in Go rather than in a Python supervisor is the whole reason
 
 ## 6. Latency budget
 
-All figures **unmeasured**. Filling this table is milestone M1, and the numbers
-decide whether the autonomy design survives contact.
+Measured 2026-09-04, WiFi Direct, robot stationary at close range, 60 s sample
+(`runs/direct-01.json`, `runs/direct-02-rttfix.json`).
 
 | Leg | Budget | Measured |
 |---|---|---|
-| Browser → teleop (LAN WebSocket) | < 10 ms | — |
-| teleop → s1-driver (bus) | < 5 ms | — |
-| s1-driver → robot actuation (Wi-Fi + bridge) | ? | — |
-| **Video decode inside the emulated blob (Rosetta)** | **?** | — |
-| RGB → JPEG → frame store | < 10 ms | — |
-| **Command RTT (key to motion)** | **< 150 ms** | — |
-| **Glass-to-glass video** | **< 400 ms** | — |
+| Connect to ready | — | **1.8–2.2 s** |
+| Time to first video frame | — | **850–880 ms** |
+| Video throughput | 30 fps | **30.1 fps @ 1280×720, 0% deficit** ✅ |
+| Frame interval p50 / p95 / p99 | — | **33 / 68 / 127 ms** |
+| Frame interval jitter (σ) | — | **23–29 ms** ⚠️ |
+| **Decode inside the emulated blob (Rosetta)** | must keep 30 fps | **0.20–0.25 cores total process CPU** ✅ |
+| RGB→RGBA + JPEG encode (our cost) | < 10 ms | **23.6 ms p50** ⚠️ |
+| Command issue into the bridge | — | 0.2 ms (local enqueue, not the wire) |
+| **Command RTT (key to motion)** | < 150 ms | **not measurable in software** — see below |
+| **Glass-to-glass video** | < 400 ms | **not measurable in software** |
 | Tier-0 + fast tier (foveate, measured) | ~11 ms | ✅ |
 | Slow tier / VLM (foveate, measured) | 6.5–13 s | ✅ |
 
-Two rows are the ones that can kill the design: **Wi-Fi jitter under motion**,
-and **decode cost under Rosetta**. Everything else is LAN-local and cheap.
+**Rosetta is a non-issue.** Full 30 fps with zero deficit at a quarter of one
+core. DECISIONS.md #11 stays deferred, now on evidence rather than assumption.
+
+**Control-plane RTT cannot be measured through this bridge.** `GetKeyValueSync`
+with `useCache=false` still returns in 0.2 ms p50 — DJI's library answers from
+its own internal state rather than the wire, so the call never exposes link
+latency. This is a property of the bridge, not a tuning problem. Real
+key-to-motion needs the external method (docs/M1.md).
+
+### Under motion — the pass that mattered
+
+Bounded exercise running *during* sampling: forward/back, Mecanum strafes both
+ways, 360° rotation, gimbal sweeps and infrared fire — 31 legs over 45 s,
+**visually confirmed by the operator** (`runs/direct-05-motion-real.json`).
+
+| Metric | Stationary | **Under full motion** |
+|---|---|---|
+| Throughput | 30.1 fps | **30.0 fps** |
+| Frame interval p50 | 33.0 ms | **33.0 ms** |
+| p95 | 63.9–68.2 ms | **65.5 ms** |
+| p99 | 126.7–129.4 ms | **121.8 ms** |
+| Jitter (σ) | 23.1–29.3 ms | **24.7 ms** |
+| Process CPU | 0.20–0.25 cores | **0.25 cores** |
+
+**Motion does not degrade the link.** Drive motors under load, the chassis
+rotating through 360°, and the antenna continuously changing orientation moved
+nothing outside the stationary range. The risk this milestone existed to find is
+not there.
+
+> **An earlier run (`runs/direct-03-motion.json`) reported the same conclusion
+> and was not valid evidence for it.** The chassis never moved: commands went to
+> `Chassis.SetSpeed()`, which the S1 ignores, and `DirectSendKeyValue` is
+> fire-and-forget so nothing errored. Only the gimbal was moving. The conclusion
+> survived re-testing, but it was not earned until the run above. See
+> DECISIONS.md #12.
+
+That also reinterprets the burstiness. It is identical moving and still, so it
+is **not the radio**: it is the decoder/bridge delivering frames in batches. The
+signature is a 1 ms minimum (two frames back-to-back) against a clean 33 ms
+median, with p95 and p99 landing near exact multiples of the frame time.
+
+**Consequences for the design.** The p99 gap of 127 ms sits comfortably inside
+the 250 ms deadman, so this is a smoothness property, not a safety one. At
+foveate's 10 fps capture rate it occasionally costs one frame. And our own
+RGB→JPEG encode costs 23.6 ms against a 33 ms budget, single-threaded — fine at
+10 fps, but `s1-driver` must not naively encode every frame at 30.
 
 The reason a ~300 ms video horizon is acceptable at all: the VLM is not in the
 control loop. Reflexes belong to tier 0/1 and to the safety layer; the VLM sets
