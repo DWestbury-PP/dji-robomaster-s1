@@ -63,4 +63,5 @@ See [docs/STATUS.md](docs/STATUS.md) for where things stand and
 | [docs/HARDWARE.md](docs/HARDWARE.md) | The three transport paths and the firmware situation |
 | [docs/M1.md](docs/M1.md) | The latency milestone: what was measured, and what cannot be |
 | [docs/M1-RUNBOOK.md](docs/M1-RUNBOOK.md) | Offline field card for working with the robot |
+| [docs/M3.md](docs/M3.md) | The browser console: running it, controls, what it measures |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |

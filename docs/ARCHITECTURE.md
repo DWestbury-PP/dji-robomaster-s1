@@ -72,13 +72,24 @@ Talking Redis from Go rather than shimming through a Python parent is
 deliberate (DECISIONS.md #9): it removes a hop, and a hop in front of the
 safety layer is a hop that can be routed around.
 
-### `teleop` (Python) — the browser console (:8700)
+### `teleop` (Go, in the driver process) — the browser console (:8700)
 
-FastAPI. WebSocket carries commands up and telemetry down at ~20 Hz; video
-returns as MJPEG in v1 (WebRTC is a revisit trigger, not a v1 requirement —
-DECISIONS.md #5). The browser sends *intent* (held keys, gamepad axes), not
-prebaked packets; the server converts to rate commands. That keeps the wire
-format free to change and makes the future mobile app the same WebSocket.
+Revised from the original Python-over-the-bus design; the rationale is measured
+rather than aesthetic (DECISIONS.md #13). Serves three things:
+
+| Route | Carries |
+|---|---|
+| `GET /` | the console UI, embedded in the binary |
+| `GET /stream` | multipart MJPEG, encoded **once** per frame and fanned out |
+| `GET /ws` | commands up, telemetry down at 10 Hz |
+
+The browser sends *intent* — held keys, gamepad axes — never prebaked packets,
+and is **never trusted to clamp**: every limit is applied server-side in the
+governor. Closing the console is treated as a dead producer and handled by the
+deadman, which is deliberately the same path as a browser crash or a Wi-Fi drop.
+
+The HUD surfaces the governor's `Reason` on every tick, which turns "it won't
+move" into "deadman" without a debugger.
 
 ### intent loop (Python) — later (M5+)
 

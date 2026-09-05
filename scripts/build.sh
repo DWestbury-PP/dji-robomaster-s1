@@ -12,6 +12,8 @@ mkdir -p bin
 export CGO_ENABLED=1
 export GOARCH=amd64
 
-go build -o bin/s1probe ./cmd/s1probe
-echo "built bin/s1probe"
-file bin/s1probe | sed 's/^/  /'
+for cmd in s1probe s1teleop; do
+  go build -o "bin/${cmd}" "./cmd/${cmd}"
+  echo "built bin/${cmd}"
+  file "bin/${cmd}" | sed 's/^/  /'
+done

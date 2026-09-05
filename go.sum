@@ -4,6 +4,8 @@ github.com/brunoga/robomaster v0.0.11 h1:9d/BFV415NlTtcmMEPA2xSj/LjMOC1F/0evVzLn
 github.com/brunoga/robomaster v0.0.11/go.mod h1:r7XGUThYcUoCZhmEqToKoq8NpAJCQfjfrGghZdVjVIA=
 github.com/brunoga/timedsignalwaiter v1.0.0 h1:qrOJVQHkEs3THyiA6VJq9x5gk332Y+P1so5oNKXKyqY=
 github.com/brunoga/timedsignalwaiter v1.0.0/go.mod h1:BdJJP3W2pKIagoTPlFpoReg5sxZQ2rDa0ZspHWoX7Sw=
+github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
+github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/lmittmann/tint v1.0.5 h1:NQclAutOfYsqs2F1Lenue6OoWCajs5wJcP3DfWVpePw=
