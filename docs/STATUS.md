@@ -2,7 +2,8 @@
 
 > The living progress log. Read this + [ARCHITECTURE.md](ARCHITECTURE.md)
 > to resume work. Rationale: [DECISIONS.md](DECISIONS.md). Transport paths and
-> firmware triage: [HARDWARE.md](HARDWARE.md).
+> firmware triage: [HARDWARE.md](HARDWARE.md). Investigations:
+> [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
 ## Where things stand (2026-09-04, end of session 1)
 
@@ -47,6 +48,7 @@ See ARCHITECTURE.md §7.
 |---|---|
 | M0 — firmware triage, transport choice | ✅ done — Path B |
 | M1 — link + latency harness | **next** |
+| arm64 bridge spike | investigated, **deferred** (DECISIONS.md #11) |
 | M2 — safety layer (Go) | not started |
 | M3 — browser teleop | not started |
 | M4 — video into foveate | not started |
@@ -68,9 +70,9 @@ See ARCHITECTURE.md §7.
    camera and Wi-Fi go with it? Assumed yes, unverified. Bench question.
 6. **foveate M8.** Multi-camera + crash recovery is the prerequisite for M4 here.
    Sequence it in the foveate session, not this one.
-7. **Battery health.** Only one battery held enough charge to power a vehicle
-   this session. Two-year-old LiPos on a shelf; replacements may be a
-   prerequisite for any sustained M1 testing, and DJI no longer sells them.
+7. ~~**Battery health.**~~ **Resolved 2026-09-04** — two batteries hold a full
+   charge. The short session-1 runtime was an impatient partial charge, not
+   degradation. No blocker for M1.
 
 ## Session log
 
@@ -81,4 +83,6 @@ consumer (M10 `intentions`, "schema TBD with the movement system"). Wrote the
 initial design set. Operator then powered up a vehicle and read firmware on
 both: 00.06.0518 active, 00.06.0521 staged, killing Path A. Verified Path B
 against the upstream repo and revised the design around a single Go
-`s1-driver`. No code.
+`s1-driver`. Ran a 20-minute spike on native-arm64 feasibility — reached a hard
+dyld process-platform wall, documented and deferred (#11). Batteries confirmed
+healthy. No code.

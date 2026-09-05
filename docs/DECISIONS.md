@@ -179,3 +179,30 @@ instead of a rewrite.
 
 **Revisit if.** M1 shows decode under Rosetta is a material share of the video
 budget, or macOS 27 lands on this machine.
+
+---
+
+### 11. Stay on Rosetta for now; the native-arm64 route is understood but deferred
+
+**Decision.** Ship `s1-driver` as amd64 under Rosetta 2 (#10). Do not attempt a
+native arm64 bridge before M1.
+
+**Why.** A 20-minute spike (SPIKE-arm64-bridge.md) established that DJI's iOS
+build *is* arm64, is *not* DRM-encrypted, exports the same 11-function API, and
+re-platforms to Mac Catalyst in a single `vtool` command — but dyld requires the
+**loading process** to be Catalyst too, and neither Go nor Command Line Tools
+clang can produce one. The only shape that works is a Catalyst host process
+talking to Go over IPC: 3–4 days best case, 1–2 weeks realistic, with a real
+chance the Unity plugin will not run headless at all.
+
+Against that: we have **not measured what Rosetta costs us** — M1 does. And the
+fix would *add* a process and an IPC hop, so the net win is not certainly
+positive. Optimizing an unquantified cost, at that price, is the wrong order.
+
+**Not a supporting argument.** The Jetson/M9 case does not transfer — arm64
+Linux needs the *Android* ELF `.so`, a different artifact with different
+blockers (SPIKE-arm64-bridge.md §6).
+
+**Revisit if.** M1 shows decode under Rosetta is a material share of the
+glass-to-glass budget, or macOS 27 lands on this machine (#10). The spike doc is
+the head start.

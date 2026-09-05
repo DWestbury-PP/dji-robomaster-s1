@@ -60,3 +60,4 @@ See [docs/STATUS.md](docs/STATUS.md) for where things stand and
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Services, transports, command model, safety, roadmap |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Every non-obvious choice, with rationale and revisit triggers |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | The three transport paths, firmware triage, what to buy |
+| [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |
