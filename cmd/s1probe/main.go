@@ -39,7 +39,7 @@ import (
 
 var (
 	appID       = flag.Uint64("appid", 0, "App ID to connect to. 0 connects to the first robot found.")
-	wifiDirect  = flag.Bool("wifi-direct", false, "Connect via WiFi Direct (robot as AP) instead of router mode.")
+	wifiDirect  = flag.Bool("wifi-direct", false, "Connect via WiFi Direct (robot as its own AP) instead of router mode. Router mode is the default.")
 	videoSecs   = flag.Duration("video", 30*time.Second, "How long to sample the video stream.")
 	rttSamples  = flag.Int("rtt-samples", 30, "Control-plane round trips to measure.")
 	allowChass  = flag.Bool("allow-chassis", false, "Permit a brief chassis nudge for actuation RTT. Off by default: the gimbal is used instead.")

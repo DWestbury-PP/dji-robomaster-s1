@@ -117,6 +117,26 @@ Live video measured **~14.8 fps at 15 fps configured, ~55 KB/frame** — real
 imagery compresses about 3× worse than the synthetic test pattern, so roughly
 6.6 Mbps.
 
+## Router mode
+
+The S1 now joins the house network rather than serving its own AP.
+
+| | |
+|---|---|
+| Address | `192.168.1.39` (MAC `60:60:1f:cd:b8:66`) |
+| App ID | `4050813280395343415`, state **paired** |
+| Announcement | UDP broadcast on `:45678`, about every 500 ms |
+
+**The DJI app is not needed to bring the robot up.** Measured with no app
+running anywhere: the robot joins Wi-Fi on its own and announces itself twice a
+second. `bin/s1find` reports what it sees, and answers the question `ping`
+cannot — the S1 does not reply to ICMP.
+
+⬜ **Unverified:** whether this survives a power cycle. The test is to power the
+robot off and on and run `./bin/s1find` **without opening the app**. If it is
+found, the app is never needed again; if not, the credentials do not persist
+and that is worth knowing before relying on it.
+
 ## Open questions
 
 1. **Key discovery.** The bridge is a reverse-engineered key/value + event API;
@@ -125,17 +145,12 @@ imagery compresses about 3× worse than the synthetic test pattern, so roughly
 2. **Rosetta decode cost.** Video decode happens inside the emulated blob, not
    on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
    design (ARCHITECTURE.md §6).
-3. **Router mode, for range.** Direct mode works and is fully characterised, but
-   the S1 also supports joining an existing network ("Connection via Router"),
-   which DJI says gives broader coverage and would let it roam the house. It
-   would also **delete the dual-homing arrangement entirely** — one network for
-   Redis, Ollama and the robot, which is the shape M4 wants.
-
-   Not yet done. Requires the DJI app (⚠️ decline the staged 00.06.0521), a
-   WPA/WPA2-PSK network with client isolation off, and a QR code held up to the
-   robot's camera. Costs one extra hop, so re-run `s1probe -video 60s` in router
-   mode and compare against §6 before building on it. 2.4 GHz likely beats
-   5 GHz for whole-home range despite DJI's interference advice.
+3. ~~**Router mode, for range.**~~ **Resolved 2026-09-05 — adopted.** The S1 is
+   joined to the house network at `192.168.1.39`. It is **better on every
+   measure that matters**, not merely more convenient: jitter fell ~7× and the
+   p99 tail 3× against direct mode (ARCHITECTURE.md §6). Dual-homing is gone —
+   one network for Redis, Ollama and the robot. Router mode is now the default
+   for both binaries; `-wifi-direct` opts back out.
 4. **Two vehicles at once.** The bridge handle is process-wide; whether a second
    S1 can be driven from the same host is unknown.
 5. **Path C camera.** If we ever replace the intelligent controller, does the FPV
@@ -147,6 +162,13 @@ imagery compresses about 3× worse than the synthetic test pattern, so roughly
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 3 (2026-09-05).** Operator moved the S1 onto the house network.
+Confirmed it announces itself autonomously with no app running, built `s1find`
+to prove it, and measured router mode against direct: jitter ~7× better, p99 3×
+better. That corrected an over-reached conclusion from session 2 — the
+burstiness was the direct-mode radio, not decoder batching. Router mode is now
+the default.
 
 **Session 2 (2026-09-04).** M1 hardware bring-up through M3. Connected to a real
 vehicle over WiFi Direct; measured §6 and cleared Rosetta on evidence; caught

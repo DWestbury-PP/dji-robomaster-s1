@@ -12,7 +12,7 @@ mkdir -p bin
 export CGO_ENABLED=1
 export GOARCH=amd64
 
-for cmd in s1probe s1teleop; do
+for cmd in s1probe s1teleop s1find; do
   go build -o "bin/${cmd}" "./cmd/${cmd}"
   echo "built bin/${cmd}"
   file "bin/${cmd}" | sed 's/^/  /'

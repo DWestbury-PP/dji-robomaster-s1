@@ -35,8 +35,8 @@ import (
 
 var (
 	addr       = flag.String("addr", "localhost:8700", "Listen address for the console.")
-	wifiDirect = flag.Bool("wifi-direct", true, "Connect via WiFi Direct (robot as AP).")
-	appID      = flag.Uint64("appid", 0, "Router mode only: app ID. 0 connects to the first robot found.")
+	wifiDirect = flag.Bool("wifi-direct", false, "Connect via WiFi Direct (robot as its own AP) instead of router mode. Router mode is the default: the S1 joins the house network, which removes the dual-homing arrangement entirely.")
+	appID      = flag.Uint64("appid", 0, "Router mode: only connect to a robot announcing this app ID. 0 takes the first robot found — fine with one vehicle, not with two.")
 	streamFPS  = flag.Int("fps", 15, "Browser video rate. Encode costs ~23.6 ms/frame, so 30 would burn most of a core.")
 	quality    = flag.Int("quality", 70, "JPEG quality for the browser stream.")
 	maxChassis = flag.Float64("max-chassis", 0.35, "Chassis deflection clamp, fraction of full stick.")
