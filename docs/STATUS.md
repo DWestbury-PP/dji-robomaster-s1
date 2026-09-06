@@ -3,8 +3,8 @@
 > The living progress log. Read this + [ARCHITECTURE.md](ARCHITECTURE.md)
 > to resume work. Rationale: [DECISIONS.md](DECISIONS.md). Transport paths and
 > firmware triage: [HARDWARE.md](HARDWARE.md). Environment, network and
-> toolchain: [SETUP.md](SETUP.md). Current milestone: [M1.md](M1.md).
-> Investigations:
+> toolchain: [SETUP.md](SETUP.md). Milestone write-ups: [M1.md](M1.md),
+> [M3.md](M3.md), [M4.md](M4.md), [BAKEOFF.md](BAKEOFF.md). Investigations:
 > [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
 ## Where things stand (2026-09-04)
@@ -101,8 +101,13 @@ Wi-Fi for the robot). Numbers in ARCHITECTURE.md §6; raw runs in `runs/`.
   a property of the API, not a measurement.
 - ⚠️ **Frame delivery is bursty** — identical moving and still, so it is the
   decoder batching, not the radio. Inside the deadman; a smoothness issue.
+  **Corrected 2026-09-05: it was the radio.** Router mode cut jitter ~7× on the
+  same decoder, which the batching explanation cannot account for. The
+  moving-and-still symmetry was real but did not license the conclusion drawn
+  from it (ARCHITECTURE.md §6).
 - ⚠️ **Our JPEG encode costs 23.6 ms** of a 33 ms frame budget. Do not encode
-  every frame in `s1-driver`.
+  every frame in `s1teleop` — the browser stream defaults to 15 fps for this
+  reason.
 
 ## M2 — safety layer
 
@@ -179,15 +184,28 @@ live in `NOTICE`.
 
 ```bash
 ./scripts/build.sh
-./bin/s1find                                   # is the robot on the network?
+./bin/s1find        # is the robot on the network?
+./scripts/start.sh  # all three processes; Ctrl-C stops them together
+```
+
+`start.sh` runs the console, the observer and the detector, logging each to
+`logs/run/`. It skips the observer if Ollama is not answering and the detector
+if `uv` is missing, and refuses to start if something is already listening on
+:8700 — a second console fails to bind and dies while the browser still answers
+from the first, which looks healthy and is not. Arguments pass through to
+`s1teleop`, so `./scripts/start.sh -mock` needs no robot.
+
+To work on one process, start them by hand instead:
+
+```bash
 ./bin/s1teleop                                 # console at :8700, recording by default
 ./bin/s1narrate -v                             # the observer
 cd perception/detector && uv run detect.py -v  # the detector
 ```
 
-Three processes, started in any order. The narrator and detector poll and will
-wait for the console; the console re-applies session setup when the robot
-reconnects, so a battery swap needs no restart.
+Order does not matter. The narrator and detector poll and will wait for the
+console; the console re-applies session setup when the robot reconnects, so a
+battery swap needs no restart.
 
 ## What M4 established
 
@@ -225,12 +243,14 @@ change for them.
 
 ## Open questions
 
-1. **Key discovery.** The bridge is a reverse-engineered key/value + event API;
-   upstream's README says the remaining work is learning what each key does. M1
-   should produce a map of the keys we actually need.
-2. **Rosetta decode cost.** Video decode happens inside the emulated blob, not
-   on VideoToolbox. Measure in M1; it is one of two numbers that could kill the
-   design (ARCHITECTURE.md §6).
+1. ~~**Key discovery.**~~ **Closed 2026-09-04 — no longer needed.** The keys
+   this repo requires turned out to be few, and they are all in `cmd/s1teleop`
+   and `cmd/s1probe`. A general map of the bridge's key space was never the
+   blocker it looked like.
+2. ~~**Rosetta decode cost.**~~ **Closed 2026-09-04 — cleared on evidence.**
+   30.1 fps, 0% deficit, 0.24 cores under emulation (ARCHITECTURE.md §6). This
+   was one of two numbers that could have killed the design; it killed the case
+   for the arm64 port instead (DECISIONS.md #11).
 3. ~~**Router mode, for range.**~~ **Resolved 2026-09-05 — adopted.** The S1 is
    joined to the house network at `192.168.1.x`. It is **better on every
    measure that matters**, not merely more convenient: jitter fell ~7× and the
@@ -241,8 +261,10 @@ change for them.
    S1 can be driven from the same host is unknown.
 5. **Path C camera.** If we ever replace the intelligent controller, does the FPV
    camera and Wi-Fi go with it? Assumed yes, unverified. Bench question.
-6. **foveate M8.** Multi-camera + crash recovery is the prerequisite for M4 here.
-   Sequence it in the foveate session, not this one.
+6. ~~**foveate M8.**~~ **Moot 2026-09-05.** It was the prerequisite only for the
+   Redis-bus version of M4. DECISIONS.md #14 built M4 on an HTTP transport
+   inside this repo, so there is nothing to sequence in the foveate session and
+   nothing here waits on it.
 7. ~~**Battery health.**~~ **Resolved 2026-09-04** — two batteries hold a full
    charge. The short session-1 runtime was an impatient partial charge, not
    degradation. No blocker for M1.

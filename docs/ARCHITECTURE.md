@@ -18,47 +18,54 @@ The second premise, new since M0: **the DJI bridge is a single process-wide
 handle.** Two processes cannot both hold it. That is not a style preference — it
 collapses what were two services into one, and it decides where safety lives.
 
-## 2. Relationship to foveate
+## 2. Perception transport
 
-`foveate` is a peer repo, not a dependency in the vendoring sense. It owns
-perception; this repo owns the vehicle. They meet on the Redis Streams bus.
+Perception tiers are separate processes that **pull frames from `s1teleop` over
+HTTP** and post their results back. There is no broker, no shared frame store
+and no schema shared with another repo.
 
-| Stream | Producer | Consumer | Schema owner |
-|---|---|---|---|
-| `frames` | **`s1-driver`** (this repo) | foveate tiers | foveate |
-| `detections`, `observations`, `fusion` | foveate | this repo's intent loop (later) | foveate |
-| `intentions` | intent loop (later) | `s1-driver` | **joint** — foveate M10 |
-| `s1.commands` | `teleop`, intent loop | `s1-driver` | this repo |
-| `s1.telemetry` | `s1-driver` | `teleop`, intent loop | this repo |
+| Route | Direction | Used by |
+|---|---|---|
+| `GET /stream` | push, multipart MJPEG | the browser, and any tier that keeps up |
+| `GET /frame.jpg` | pull, newest frame only | slow tiers — the narrator |
+| `POST /perception` | results in | detector and narrator alike |
 
-`s1-driver` publishes foveate's `FrameMessage` verbatim with
-`camera_id="s1-fpv"`, writing JPEGs into foveate's frame store. From foveate's
-side the robot is indistinguishable from a webcam — which is the point, and
-which is why foveate's M8 (multi-camera) is the prerequisite worth landing.
+Push and pull are not interchangeable, and that is the whole design. A pushed
+stream buffers frames in the socket while a slow tier thinks, so a model taking
+seconds would reason about a scene from seconds ago — the exact coupling the
+transport exists to remove. **Slow tiers must pull** (DECISIONS.md #14).
 
-The `frames` schema is foveate's to change. This repo pins a copy and carries a
-contract test that fails loudly on drift (DECISIONS.md #4).
+> **Superseded.** Through M3 this section described a Redis Streams bus shared
+> with the peer repo `foveate` — this repo publishing `frames`, consuming
+> `intentions`. DECISIONS.md #14 replaced it with the HTTP transport above:
+> `FrameHub` already gives each consumer the newest frame independently, the
+> frames are already encoded once for the browser, and a bus route would have
+> paid that encode twice plus a disk round trip. What was adopted from foveate
+> is the tiering idea, the schema vocabulary and above all its benchmarks — not
+> its transport. The historical rationale stands in DECISIONS.md #1 and #4.
 
 ## 3. Services
 
-Three processes: one Go, two Python.
+Three processes: two Go, one Python. `scripts/start.sh` runs all three.
 
-### `s1-driver` (Go) — the only thing that touches the robot
+### `s1teleop` (Go) — the only thing that touches the robot
 
 Holds the single UnityBridge handle, and therefore owns **both** control and
-video. Consumes `s1.commands`, publishes `s1.telemetry` and `frames`.
+video, the browser console, and the safety governor between them. Takes intent
+from the browser over a WebSocket and serves frames to everything else.
 
 ```
- s1.commands ──►┌──────────────────────────────────┐
-                │  safety (deadman, clamps, arming)│  ◄── unbypassable: no
-                ├──────────────────────────────────┤      other path exists
-                │  brunoga/robomaster              │
-                │  module/{chassis,gimbal,gun,…}   │──► robot
-                │  module/camera → RGB callback    │◄── robot
-                ├──────────────────────────────────┤
-                │  JPEG encode → foveate frame store│
-                └──┬────────────────┬──────────────┘
-       s1.telemetry ▼              ▼ frames
+ browser intent ─►┌──────────────────────────────────┐
+   (WebSocket)    │  safety (deadman, clamps, arming)│  ◄── unbypassable: no
+                  ├──────────────────────────────────┤      other path exists
+                  │  brunoga/robomaster              │
+                  │  module/{chassis,gimbal,gun,…}   │──► robot
+                  │  module/camera → RGB callback    │◄── robot
+                  ├──────────────────────────────────┤
+                  │  JPEG encode once → FrameHub     │
+                  └──┬────────────────┬──────────────┘
+          telemetry ▼                 ▼ /stream · /frame.jpg
+            (WebSocket)          (browser, perception tiers)
 ```
 
 Runs as `GOARCH=amd64` under Rosetta 2 — there is no arm64 build of DJI's
@@ -66,9 +73,10 @@ library (HARDWARE.md, Path B). It is I/O-bound, so emulation is cheap
 everywhere except video decode, which M1 measures.
 
 Because the camera hands us **decoded RGB via callback**, there is no H.264
-parsing on our side: the frame path is callback → JPEG → frame store → `frames`.
+parsing on our side: the frame path is callback → JPEG encoded **once** →
+`FrameHub` → the browser and the perception tiers.
 
-Talking Redis from Go rather than shimming through a Python parent is
+Keeping this in one Go process rather than shimming through a Python parent is
 deliberate (DECISIONS.md #9): it removes a hop, and a hop in front of the
 safety layer is a hop that can be routed around.
 
@@ -117,7 +125,7 @@ readable.
 
 ### intent loop — deferred
 
-Consuming `fusion` and emitting `intentions` waits for a model fast and
+Acting on what the tiers observe waits for a model fast and
 spatially reliable enough to trust, which the 2026-09-05 bake-off showed does
 not currently exist (DECISIONS.md #15). The transport is already in place for
 when it does.
@@ -137,12 +145,12 @@ CommandMessage:
   fire:      int = 0                    # blaster rounds; gated, see §5
 ```
 
-`s1-driver` applies the newest non-expired command each tick. An expired command
+`s1teleop` applies the newest non-expired command each tick. An expired command
 is not "the last known good value" — it is zero.
 
 ## 5. Safety layer
 
-Implemented **in Go, inside `s1-driver`**, before the first drive:
+Implemented **in Go, inside `s1teleop`**, before the first drive:
 
 1. **Deadman.** No fresh command within `DEADMAN_MS` (default 250) → chassis
    and gimbal rates go to zero. Independent of, and additional to, per-command
@@ -159,8 +167,9 @@ Implemented **in Go, inside `s1-driver`**, before the first drive:
 5. **Link loss.** Bridge error or telemetry silence → same as deadman, plus a
    reconnect with backoff. Reconnect never restores `armed`.
 
-Putting this in Go rather than in a Python supervisor is the whole reason
-`s1-driver` speaks Redis directly. Safety on any hop but the last is advisory.
+Putting this in Go, in the same process that holds the bridge handle, is what
+makes it the last hop: there is no transport between the governor and the wire
+for anything to be routed around. Safety on any hop but the last is advisory.
 
 ## 6. Latency budget
 
@@ -242,7 +251,7 @@ to first frame.
 
 **Router mode is now the default** for both binaries. It is better on every
 measure that matters, removes the dual-homing arrangement entirely (one network
-for Redis, Ollama and the robot), and gives whole-home range.
+for Ollama and the robot), and gives whole-home range.
 
 > **An earlier run (`runs/direct-03-motion.json`) reported the same conclusion
 > and was not valid evidence for it.** The chassis never moved: commands went to
@@ -258,9 +267,10 @@ median, with p95 and p99 landing near exact multiples of the frame time.
 
 **Consequences for the design.** The p99 gap of 127 ms sits comfortably inside
 the 250 ms deadman, so this is a smoothness property, not a safety one. At
-foveate's 10 fps capture rate it occasionally costs one frame. And our own
+a 10 fps tier rate it occasionally costs one frame. And our own
 RGB→JPEG encode costs 23.6 ms against a 33 ms budget, single-threaded — fine at
-10 fps, but `s1-driver` must not naively encode every frame at 30.
+10 fps, but `s1teleop` must not naively encode every frame at 30, which is why
+the browser stream defaults to 15.
 
 The reason a ~300 ms video horizon is acceptable at all: the VLM is not in the
 control loop. Reflexes belong to tier 0/1 and to the safety layer; the VLM sets
@@ -299,11 +309,17 @@ the numbers cleared Rosetta on evidence and killed the case for the arm64 work
 
 ## 8. Known unknowns carried into M1
 
-- **Key discovery.** The bridge API is a reverse-engineered key/value + event
-  system; the library's own README says the remaining work is learning what each
-  key does. M1 should produce a small map of the keys we actually need.
-- **Wi-Fi mode.** Direct (S1 as AP) may force the Mac off the network that hosts
-  Redis and Ollama. Router mode avoids that but adds a hop. Measure both.
-- **Two vehicles, one bridge.** Whether a second S1 can be driven from the same
-  host at all is unknown — the handle is process-wide, so it is at best a second
-  process, at worst not supported.
+Kept as written, as the record of what was actually uncertain going in. Two of
+the three are now answered; the live list is STATUS.md's open questions.
+
+- ~~**Key discovery.**~~ **Answered by M1.** The bridge API is a
+  reverse-engineered key/value + event system. The keys this repo needs are the
+  ones in `cmd/s1teleop` and `cmd/s1probe`; no wider map was required.
+- ~~**Wi-Fi mode.**~~ **Answered by M3.5 — router mode, on measurement.** Both
+  modes were run: jitter fell ~7× and the p99 tail 3× on router mode (§6). The
+  concern that direct mode would force the Mac off the network that hosts its
+  services was real, and worse than expected — it produced a same-subnet
+  dual-homing bug that dropped sessions (SETUP.md).
+- **Two vehicles, one bridge.** Still open. Whether a second S1 can be driven
+  from the same host at all is unknown — the handle is process-wide, so it is at
+  best a second process, at worst not supported.

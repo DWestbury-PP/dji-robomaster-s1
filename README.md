@@ -58,9 +58,10 @@ can never delay the control loop.
 
 ## Status
 
-**A working control system.** M0–M3 are complete and verified on hardware: a
-stock, unmodified S1 driven from a browser with live video, through a safety
-layer that stops the vehicle when anything goes quiet.
+**A working control system with an observer aboard.** M0–M4 are complete and
+verified on hardware: a stock, unmodified S1 driven from a browser with live
+video, through a safety layer that stops the vehicle when anything goes quiet,
+while a local vision model narrates what it sees and every drive is recorded.
 
 | | |
 |---|---|
@@ -71,20 +72,44 @@ layer that stops the vehicle when anything goes quiet.
 | Control | 20 Hz rate commands under a 250 ms deadman |
 | Observer | `gemma4:e4b` narrating in prose every 20 s, 1.6–3.7 s per caption |
 | Detector | yolo11n on MPS, 7–17 ms a frame — drawn and logged, never actuating |
-| Tests | **41** (53 with subtests), race-clean |
+| Recording | every drive, on by default — `logs/drives/<timestamp>/` |
+| Tests | **49** (61 with subtests), race-clean |
 
-Next is M4 — publishing `frames` onto foveate's bus so YOLO and the VLM can
-narrate the robot's view. See [docs/STATUS.md](docs/STATUS.md) for where things
-stand, [docs/SETUP.md](docs/SETUP.md) for the environment, and
+M4 is done: the perception tiers pull frames over HTTP and post observations
+back, with no broker and no shared filesystem (DECISIONS.md #14). Next is M4.5,
+an advisory looming highlight in the console — wired to nothing, so that the
+heuristic can be calibrated against real driving before anything is allowed to
+act on it.
+
+See [docs/STATUS.md](docs/STATUS.md) for where things stand,
+[docs/SETUP.md](docs/SETUP.md) for the environment, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design.
 
+## Running it
+
 ```bash
-./scripts/install-bridge.sh && ./scripts/build.sh
-./bin/s1find              # where is the robot?
-./bin/s1teleop            # console at http://localhost:8700
-./bin/s1narrate -v        # the observer, in its own process
+./scripts/install-bridge.sh && ./scripts/build.sh   # once
+./scripts/start.sh                                  # console at :8700
+```
+
+`start.sh` brings up all three processes — console, observer, detector — and
+Ctrl-C stops them together. It skips the observer if Ollama is not answering and
+the detector if `uv` is missing, because the console alone is worth running.
+Per-process output lands in `logs/run/`.
+
+```bash
+./scripts/start.sh -mock   # no robot: synthetic video, a sink that discards
+./bin/s1find               # is the robot on the network?
+```
+
+Anything passed to `start.sh` goes to `s1teleop`, so `-wifi-direct`,
+`-speed-level fast` and the rest work the same way. To run a process on its own
+— which is what you want when you are changing one of them — start each by hand:
+
+```bash
+./bin/s1teleop                                  # the console and the robot
+./bin/s1narrate -v                              # the observer
 cd perception/detector && uv run detect.py -v   # the detector
-./bin/s1teleop -mock      # no robot needed
 ```
 
 ## Documentation
@@ -101,7 +126,7 @@ cd perception/detector && uv run detect.py -v   # the detector
 | [docs/M3.md](docs/M3.md) | The browser console: running it, controls, what it measures |
 | [docs/M4.md](docs/M4.md) | Perception transport: cadence classes, and why observations are dated |
 | [docs/BAKEOFF.md](docs/BAKEOFF.md) | Model comparison on real frames — local and hosted, and what it settled |
-| [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1-driver` runs under Rosetta, and what native arm64 would cost |
+| [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1teleop` runs under Rosetta, and what native arm64 would cost |
 
 ## Built on
 

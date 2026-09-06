@@ -3,6 +3,12 @@
 Every non-obvious choice, with the reasoning and the condition that would make
 us revisit it. Same format as foveate's DECISIONS.md.
 
+Entries are dated records and are **not** rewritten when a later one overturns
+them; a superseded decision carries a note pointing at the one that replaced it.
+Two naming notes for anyone reading these cold: **`s1-driver` is the design-time
+name of the binary that shipped as `s1teleop`**, and references to a Redis
+Streams bus predate #14, which removed it.
+
 ---
 
 ### 1. Peer repo on a shared bus, not a fork of or a module inside foveate
@@ -18,6 +24,14 @@ branch of foveate.
 
 **Cost, stated honestly.** One cross-repo contract (the `frames` schema) and two
 stacks to bring up. Mitigated by #4.
+
+> **Partly superseded by #14 (2026-09-05).** The separate-repo half stands and
+> was right. The shared-bus half did not survive contact: M4 was built on an
+> HTTP transport inside this repo, so there is no Redis bus, no `frames`
+> publication and no `fusion` subscription. The stated cost was paid down to
+> zero by removing the contract rather than by mitigating it — which also
+> removed the dependency on foveate's M8. What was actually taken from foveate
+> is its benchmarks and its tiering vocabulary, not its transport.
 
 **Revisit if.** The contract churns often enough that the two repos are being
 edited in lockstep anyway — at that point the separation is fiction.
@@ -68,6 +82,12 @@ frame.
 
 **Revisit if.** More than two or three schemas end up shared; at that point it
 wants a real published contract package.
+
+> **Superseded by #14 (2026-09-05), never implemented.** With no bus there is no
+> `frames` message to vendor and no contract to drift, so neither the copy nor
+> the drift test was ever written. Recorded because the reasoning — vendor plus
+> a drift test, rather than a path dependency between two personal repos — is
+> the answer we would want again the day a real cross-repo schema appears.
 
 ---
 
@@ -134,11 +154,17 @@ becomes the Path C (CAN bus) testbed if and when we want unrestricted authority.
 
 ---
 
-### 9. `s1-driver` is one Go process that speaks Redis directly
+### 9. `s1-driver` is one Go process that owns the transport
 
-**Decision.** Control and video collapse into a single Go binary that consumes
-`s1.commands` and publishes `s1.telemetry` and `frames` itself, rather than a Go
-transport sidecar behind a Python `s1-link`.
+**Decision.** Control and video collapse into a single Go binary that owns its
+own I/O, rather than a Go transport sidecar behind a Python `s1-link`.
+
+> **Amended by #14 (2026-09-05).** As written, this said the process "speaks
+> Redis directly" and consumes `s1.commands` while publishing `s1.telemetry` and
+> `frames`. There is no bus: it takes intent over a WebSocket and serves frames
+> over HTTP. **The reasoning below is untouched by that** — it never depended on
+> which transport, only on the transport being *inside* the process that holds
+> the bridge handle.
 
 **Why.** Two reasons, one hard and one soft. The hard one: **the UnityBridge
 handle is process-wide**, so a separate video service physically cannot hold its
