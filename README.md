@@ -17,6 +17,14 @@ recorded, so the demonstration data exists for the day that changes.
 No modification to the robot: it runs stock firmware and is driven by
 impersonating the mobile app.
 
+![The console driving outdoors: full-bleed camera view with YOLO boxes on two parked cars, a scene caption from a local vision model, and the drive HUD](docs/images/console-outdoor.jpg)
+
+*The console, driving outdoors. Boxes from `yolo11n` with their real
+confidences, a caption from `gemma4:e4b` with its age and the countdown to the
+next one, and the gear, battery and link state along the top. The 38% and 56%
+on two parked cars are not cherry-picked — honest numbers are the reason
+nothing here is wired to the wheels.*
+
 ```
  browser — full-screen video, WASD + gamepad
      │  WebSocket: intent up, telemetry down · MJPEG video down
@@ -127,6 +135,17 @@ cd perception/detector && uv run detect.py -v   # the detector
 | [docs/M4.md](docs/M4.md) | Perception transport: cadence classes, and why observations are dated |
 | [docs/BAKEOFF.md](docs/BAKEOFF.md) | Model comparison on real frames — local and hosted, and what it settled |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1teleop` runs under Rosetta, and what native arm64 would cost |
+
+## The robot
+
+![A DJI RoboMaster S1 on a hardwood floor, LEDs lit teal, gimbal and blaster raised, standing on four Mecanum wheels](docs/images/robomaster-s1.jpg)
+
+Stock, unmodified, on firmware 00.06.0518. The four Mecanum wheels are the part
+worth reviving: each roller sits at 45°, so the chassis strafes and rotates in
+place rather than steering. The turret pitches and yaws on its own gimbal, and
+the camera that feeds everything above sits on it — which is why the view swings
+when you look around, and why the narrator sees wherever the turret last
+pointed.
 
 ## Built on
 
