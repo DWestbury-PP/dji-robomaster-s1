@@ -97,11 +97,12 @@ while `en9` stays on the house LAN at `192.168.1.0/24`. Different subnets,
 different gateways, no ambiguity. The S1 does not answer ICMP, so `ping` is not
 a connectivity test — check the ARP table, or just try connecting.
 
-**Router mode would remove all of this.** The S1 can join an existing network
-instead ("Connection via Router" in the DJI app), which DJI says gives broader
-coverage. One network for Redis, Ollama and the robot; no adapter, no toggling,
-no same-subnet trap. Not yet done — see STATUS.md open question #3 for the
-requirements and the caveats.
+**Router mode removed all of this, and is now the default.** The S1 joined the
+house network ("Connection via Router" in the DJI app) on 2026-09-05. One
+network for Ollama and the robot; no adapter, no toggling, no same-subnet trap
+— and measurably better besides, jitter ~7× lower than the robot's own AP
+(ARCHITECTURE.md §6). The dual-homed arrangement above is kept as the record of
+what `-wifi-direct` still puts you back into.
 
 Both connection modes tolerate this:
 
@@ -166,15 +167,16 @@ nor CLT clang can emit a Catalyst binary. See
 [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md) and DECISIONS.md #10, #11.
 
 Rosetta is on a clock — Apple has signalled it will be pared back after macOS 27.
-The exit is to relocate `s1-driver` to a Linux amd64 host; the bus makes that
-packaging rather than a rewrite.
+The exit is to relocate `s1teleop` to a Linux amd64 host. The HTTP transport
+makes that packaging rather than a rewrite: the tiers already reach the console
+over the network, so they do not care which machine it runs on.
 
 ### First-time setup
 
 ```bash
 brew install go
 ./scripts/install-bridge.sh   # copies DJI's blob from the Go module cache to ~/.unitybridge
-./scripts/build.sh            # builds bin/s1probe as amd64
+./scripts/build.sh            # builds all six binaries as amd64
 ```
 
 `install-bridge.sh` reads the module cache, so it works offline once
@@ -237,35 +239,41 @@ log directory into the working directory on every run.
 
 ## 5. Peer repos
 
-**`foveate`** — `~/Documents/Source Code/foveate`, the perception stack. It owns
-the tiers; this repo owns the vehicle. They meet on a Redis Streams bus, where
-`s1-driver` will publish foveate's own `FrameMessage` on the `frames` stream so
-the robot's camera enters the existing pipeline as just another camera.
+**`foveate`** — `~/Documents/Source Code/foveate`, the perception stack that
+preceded this one. **Not a dependency, and no longer a runtime peer.** M4 was
+built on an HTTP transport inside this repo rather than on foveate's Redis
+Streams bus (DECISIONS.md #14), so nothing here needs Docker, Redis, or foveate
+running. The earlier plan to publish `frames` onto that bus — and the
+dependency on foveate's M8 (multi-camera) that came with it — is dropped.
 
-State as of 2026-09-04: on `main` at `efee82c`. The `frames` contract is intact
-in `services/shared/schemas.py`. A recent commit moved 3D-printing work *out* to
-a `blender-hand` project — "Foveate returns to being the vision system" — so the
-seam is unaffected. **foveate has not yet landed its M8 (multi-camera), which is
-the prerequisite for M4 here.** Sequence that work in the foveate session.
+What this repo did take from foveate is its **benchmarks**: yolo11 and
+qwen2.5vl were the starting points for the bake-off because foveate had already
+measured them, which saved re-deriving both (BAKEOFF.md). The tiering idea and
+the schema vocabulary came across too. The transport did not.
 
-Foveate's own dependencies: Docker Desktop (Redis), Ollama with a vision model.
-At the time of writing **Ollama is reachable; Docker is not running**, so the
-bus is down — fine, because nothing in this repo needs it until M4.
+This repo's only external runtime dependency is **Ollama with a vision model**,
+for the observer.
 
 ---
 
 ## 6. Everyday commands
 
 ```bash
-# build all three binaries
+# build all six binaries
 ./scripts/build.sh
 
 # where is the robot?
 ./bin/s1find
 
-# tests
-go test -race ./...
-go test -cover ./internal/safety/ ./internal/driver/ ./internal/teleop/
+# start everything — console, observer, detector; Ctrl-C stops all three
+./scripts/start.sh
+
+# tests. CGO_ENABLED=1 GOARCH=amd64 is not optional: without it the bridge's
+# build constraints exclude every implementation file and cmd/s1teleop fails to
+# load with "build constraints exclude all Go files", which reads like a broken
+# checkout rather than a missing environment variable.
+CGO_ENABLED=1 GOARCH=amd64 go test -race ./...
+CGO_ENABLED=1 GOARCH=amd64 go test -cover ./internal/safety/ ./internal/driver/ ./internal/teleop/
 
 # drive it — router mode is the default, no network juggling
 ./bin/s1teleop                      # console at http://localhost:8700

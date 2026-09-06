@@ -270,7 +270,7 @@ func actuationProbe(c *robomaster.Client, rep *probe.Report, allowChassis bool) 
 // videoProbe samples the stream and measures three things: how long the first
 // frame takes, how evenly frames arrive (the jitter that decides whether the
 // link is usable under motion), and what it costs us to turn a frame into a
-// JPEG for foveate's frame store.
+// JPEG for the browser and the perception tiers.
 func videoProbe(c *robomaster.Client, rep *probe.Report, d time.Duration) error {
 	fmt.Printf("sampling video for %s...\n", d)
 

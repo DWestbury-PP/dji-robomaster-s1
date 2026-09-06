@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build s1probe.
+# Build every binary in cmd/.
 #
 # Must be amd64: DJI never shipped an arm64 macOS build of the UnityBridge, so
 # on Apple Silicon the binary runs under Rosetta 2 (DECISIONS.md #10, and

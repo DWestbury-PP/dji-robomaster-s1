@@ -21,7 +21,8 @@ const (
 	// SourceHuman is a person at a control surface — the teleop console today,
 	// a mobile app later.
 	SourceHuman Source = "human"
-	// SourceIntent is the autonomy loop acting on foveate's fused world-belief.
+	// SourceIntent is the autonomy loop, deferred: no such producer exists yet
+	// (DECISIONS.md #15). The constant is here so the governor can refuse it.
 	SourceIntent Source = "intent"
 )
 
