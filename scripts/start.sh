@@ -56,6 +56,12 @@ alive() {
 }
 
 pids=()
+names=()
+logs=()
+died=""
+
+# Record a started process so a later death can be reported against its log.
+track() { pids+=("$1"); names+=("$2"); logs+=("$3"); }
 
 # Kill a child and anything it spawned. `uv run` execs the interpreter as a
 # grandchild, so killing the child alone leaves a detector holding the GPU and
@@ -88,26 +94,50 @@ cleanup() {
     alive "$pid" && { pkill -KILL -P "$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null; } || true
   done
   echo
-  echo "stopped · logs in $RUNLOG/ · drives in logs/drives/"
+  if [[ -n "$died" ]]; then
+    echo "$died stopped, so the rest were shut down. Its last words:"
+    echo
+    # The bridge aborts through ObjC on exit and dumps every goroutine and CPU
+    # register, which buries the one line that says what went wrong. Cut the
+    # dump at its first marker. awk, not sed: BSD sed has no \| alternation, so
+    # a GNU-style pattern here silently matches nothing and prints the dump.
+    awk '/^libc\+\+abi|^SIGABRT|^goroutine |^\[signal /{exit} {print}' \
+      "$died_log" 2>/dev/null | grep -v '^$' | tail -8 | sed 's/^/  /'
+    echo
+    if grep -q "could not reach the robot" "$died_log" 2>/dev/null; then
+      echo "  The robot is not answering. Check it is powered on and on the network:"
+      echo "      ./bin/s1find"
+      echo "  Or work without it:"
+      echo "      ./scripts/start.sh -mock"
+      echo
+    fi
+    echo "full logs in $RUNLOG/"
+  else
+    echo "stopped · logs in $RUNLOG/ · drives in logs/drives/"
+  fi
 }
 trap cleanup INT TERM EXIT
 
 echo "s1teleop   → $RUNLOG/teleop.log"
 ./bin/s1teleop "$@" >"$RUNLOG/teleop.log" 2>&1 &
-pids+=($!)
+track $! "s1teleop" "$RUNLOG/teleop.log"
+
 
 # The console owns the frames; the other two poll it and will wait, so
 # ordering does not matter beyond keeping the startup output readable.
 if [[ $have_narrator -eq 1 ]]; then
   echo "s1narrate  → $RUNLOG/narrate.log"
   ./bin/s1narrate -v >"$RUNLOG/narrate.log" 2>&1 &
-  pids+=($!)
+  track $! "s1narrate" "$RUNLOG/narrate.log"
 fi
 
 if [[ $have_detector -eq 1 ]]; then
   echo "detector   → $RUNLOG/detect.log"
   ( cd perception/detector && uv run detect.py -v ) >"$RUNLOG/detect.log" 2>&1 &
-  pids+=($!)
+  track $! "detector" "$RUNLOG/detect.log"
+  # Ours to kill, but not ours to have announced: without this bash prints a
+  # "Terminated" job notice into the middle of the failure report.
+  disown %% 2>/dev/null || true
 fi
 
 echo
@@ -119,8 +149,14 @@ echo
 #
 # Polled rather than `wait -n`, which macOS's bash 3.2 does not have.
 while :; do
-  for pid in "${pids[@]}"; do
-    alive "$pid" || exit 1
+  i=0
+  while [[ $i -lt ${#pids[@]} ]]; do
+    if ! alive "${pids[$i]}"; then
+      died="${names[$i]}"
+      died_log="${logs[$i]}"
+      exit 1
+    fi
+    i=$((i + 1))
   done
   sleep 1
 done
