@@ -5,7 +5,7 @@ platform; not worth doing before M1. See DECISIONS.md #11.
 
 ## The question
 
-`s1-driver` must run as amd64 under Rosetta 2 because DJI never shipped an
+`s1teleop` must run as amd64 under Rosetta 2 because DJI never shipped an
 arm64 macOS build of the UnityBridge (DECISIONS.md #10). Could we get a native
 arm64 build instead — and what would "porting" actually mean?
 

@@ -176,7 +176,7 @@ over the network, so they do not care which machine it runs on.
 ```bash
 brew install go
 ./scripts/install-bridge.sh   # copies DJI's blob from the Go module cache to ~/.unitybridge
-./scripts/build.sh            # builds all six binaries as amd64
+./scripts/build.sh            # builds every cmd/ as amd64
 ```
 
 `install-bridge.sh` reads the module cache, so it works offline once
@@ -237,6 +237,66 @@ log directory into the working directory on every run.
 
 ---
 
+## 4a. Running two vehicles
+
+Each robot needs its own process — the DJI bridge handle is process-wide
+(DECISIONS.md #21) — so `S1_VEHICLES` starts one worker per vehicle plus a
+supervisor that serves the console and holds no bridge of its own.
+
+```bash
+S1_VEHICLES="Rover:1234,Scout:5678" ./scripts/start.sh
+```
+
+Workers land on `127.0.0.1:8801`, `:8802`, … and the console stays on `:8700`.
+Selection is per browser tab, so two tabs can drive two vehicles at once.
+**E-stop is fleet-wide** — whoever presses it stops every vehicle.
+
+### The gotcha: vehicles paired by the same app share an app ID
+
+Worker-to-robot assignment is by app ID. Two S1s paired with the same phone
+broadcast the **same** ID, and then each worker simply takes whichever robot
+answers discovery first — so which name lands on which robot is a coin toss,
+and it can differ between runs.
+
+Find out what yours are announcing:
+
+```bash
+./bin/s1find -watch     # prints ip, mac and app id for every broadcast
+```
+
+Distinct MACs with one shared app ID is the situation to expect. Until they
+differ, tell the vehicles apart by battery percentage or by what their cameras
+see, and treat the names as arbitrary for that session.
+
+Giving one a distinct app ID does **not** require the DJI app: `support/qrcode`
+in the upstream library generates the pairing code, which the robot reads with
+its own camera. That matters — it keeps the staged 00.06.0521 firmware, and the
+phone, entirely out of the loop. Not yet built here.
+
+### Starting them by hand
+
+Useful when working on one vehicle, and what the supervisor does under the hood:
+
+```bash
+./bin/s1teleop -addr 127.0.0.1:8801 -name Rover -appid 1234
+./bin/s1teleop -addr 127.0.0.1:8802 -name Scout -appid 5678
+./bin/s1teleop -addr localhost:8700 -workers 127.0.0.1:8801,127.0.0.1:8802
+```
+
+Start the workers **staggered**. Discovery binds a single UDP port and only one
+process can hold it at a time; they recover, but sequential startup keeps it
+quiet.
+
+### If a vehicle will not reconnect
+
+A worker that exited uncleanly leaves the robot refusing new connections for
+roughly a minute — the session is held on the robot's side, not ours. It
+reports `Connection connection not established` and the fix is to wait. The
+robot is still broadcasting throughout, so `./bin/s1find -watch` will show it
+even while it declines to talk.
+
+---
+
 ## 5. Peer repos
 
 **`foveate`** — `~/Documents/Source Code/foveate`, the perception stack that
@@ -259,7 +319,7 @@ for the observer.
 ## 6. Everyday commands
 
 ```bash
-# build all six binaries
+# build everything in cmd/
 ./scripts/build.sh
 
 # where is the robot?
@@ -267,6 +327,9 @@ for the observer.
 
 # start everything — console, observer, detector; Ctrl-C stops all three
 ./scripts/start.sh
+
+# two vehicles, switchable from a dropdown in the console
+S1_VEHICLES="Rover:<appID>,Scout:<appID>" ./scripts/start.sh
 
 # tests. CGO_ENABLED=1 GOARCH=amd64 is not optional: without it the bridge's
 # build constraints exclude every implementation file and cmd/s1teleop fails to

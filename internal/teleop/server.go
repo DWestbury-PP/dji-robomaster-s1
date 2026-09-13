@@ -5,8 +5,10 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +45,22 @@ type Config struct {
 	VehicleID   string
 	VehicleName string
 	AppID       uint64
+
+	// SetLED, when present, sets this vehicle's armour LEDs. Injected as a
+	// function so this package stays free of DJI specifics, the same reason
+	// StatusFn is supplied rather than a client.
+	SetLED func(opts map[string]int, r, g, b uint8, effect bool) error
+
+	// SetLEDRaw sends an arbitrary JSON payload to the LED key. It exists only
+	// to identify the undocumented wire format, and is wired up only when the
+	// operator passes -led-experiment.
+	//
+	// It is not a feature and must not become one. The native library parses
+	// this payload with json_dto and throws a C++ exception on a malformed
+	// one, which is uncaught and aborts the process — Go cannot recover. An
+	// always-on endpoint that crashes the vehicle on bad input is a remote
+	// kill switch, so it stays behind a flag until the format is known.
+	SetLEDRaw func(payload string) error
 }
 
 // Server is the browser console. Commands arrive over the WebSocket and go
@@ -129,10 +147,81 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /perception", s.handlePerception)
 	mux.HandleFunc("POST /perception/pending", s.handlePending)
 	mux.HandleFunc("GET /vehicle", s.handleVehicle)
+	mux.HandleFunc("POST /led", s.handleLED)
+	if s.cfg.SetLEDRaw != nil {
+		mux.HandleFunc("POST /led/raw", s.handleLEDRaw)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
 	return mux
+}
+
+// handleLED sets the vehicle's LEDs, so two robots driven from one console can
+// be told apart by eye. The wire format is not documented and is still being
+// identified against real hardware, hence the format selector.
+//
+// The reply says "sent", never "worked": the bridge does not acknowledge this,
+// so claiming success here would be inventing evidence.
+func (s *Server) handleLED(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.SetLED == nil {
+		http.Error(w, "no LED control on this vehicle", http.StatusNotImplemented)
+		return
+	}
+	q := r.URL.Query()
+	atoi := func(name string, def int) int {
+		if v := q.Get(name); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				return n
+			}
+		}
+		return def
+	}
+	clamp := func(n int) uint8 {
+		if n < 0 {
+			return 0
+		}
+		if n > 255 {
+			return 255
+		}
+		return uint8(n)
+	}
+
+	opts := map[string]int{
+		"deviceID":    atoi("deviceID", 0),
+		"controlMode": atoi("controlMode", 1),
+		"flashMode":   atoi("flashMode", 1),
+		"loopCount":   atoi("loopCount", 0),
+		"time1":       atoi("time1", 0),
+		"time2":       atoi("time2", 0),
+	}
+	red, green, blue := clamp(atoi("r", 0)), clamp(atoi("g", 0)), clamp(atoi("b", 0))
+
+	useEffect := q.Get("key") == "effect"
+	if err := s.cfg.SetLED(opts, red, green, blue, useEffect); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"sent": true, "opts": opts, "r": red, "g": green, "b": blue, "effectKey": useEffect,
+		"note": "sent to the bridge; look at the vehicle to see whether it obeyed",
+	})
+}
+
+// handleLEDRaw is an experiment, not an endpoint. See Config.SetLEDRaw: a
+// malformed payload aborts this process from inside the DJI library.
+func (s *Server) handleLEDRaw(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		http.Error(w, "unreadable body", http.StatusBadRequest)
+		return
+	}
+	if err := s.cfg.SetLEDRaw(string(body)); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Fprintln(w, "sent — check the vehicle, and check this process is still alive")
 }
 
 // handleVehicle answers "which robot are you holding?" for a supervisor. Safe
