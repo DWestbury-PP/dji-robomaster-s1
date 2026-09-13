@@ -31,6 +31,7 @@ import (
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/driver"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/experience"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/fleet"
+	"github.com/DWestbury-PP/dji-robomaster-s1/internal/leds"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/safety"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/stick"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/teleop"
@@ -58,6 +59,8 @@ var (
 	// no bridge of its own.
 	workers  = flag.String("workers", "", "Comma-separated worker addresses (e.g. 127.0.0.1:8801,127.0.0.1:8802). Setting this runs as the supervisor: no robot of its own, a dropdown over the workers listed.")
 	nameFlag = flag.String("name", "", "Display name for the vehicle this worker drives. Shown in the supervisor's dropdown.")
+
+	ledExp = flag.Bool("led-experiment", false, "Expose POST /led/raw, which sends an arbitrary JSON payload to the LED key. For identifying the wire format only: a malformed payload aborts this process from inside DJI's library, and Go cannot recover from it.")
 )
 
 func main() {
@@ -91,6 +94,8 @@ func main() {
 		statusFn   func() teleop.Status
 		cleanup    func()
 		superviseC *robomaster.Client
+		setLED     func(opts map[string]int, r, g, b uint8, effect bool) error
+		setLEDRaw  func(payload string) error
 	)
 
 	if *mock {
@@ -110,6 +115,44 @@ func main() {
 		cleanup = clean
 		go pumpVideo(c, hub)
 		superviseC = c
+		// LED control is not working yet: the colour message parses and the
+		// robot ignores it (docs/EXPLORATIONS.md). Both endpoints stay behind
+		// -led-experiment until it does something, rather than shipping a
+		// control that silently has no effect.
+		setLED = func(opts map[string]int, r, g, b uint8, effect bool) error {
+			o := leds.Default
+			if v, ok := opts["deviceID"]; ok {
+				o.DeviceID = v
+			}
+			if v, ok := opts["controlMode"]; ok {
+				o.ControlMode = v
+			}
+			if v, ok := opts["flashMode"]; ok {
+				o.FlashMode = v
+			}
+			if v, ok := opts["loopCount"]; ok {
+				o.LoopCount = v
+			}
+			if v, ok := opts["time1"]; ok {
+				o.Time1 = v
+			}
+			if v, ok := opts["time2"]; ok {
+				o.Time2 = v
+			}
+			col := leds.Colour{R: r, G: g, B: b}
+			if effect {
+				return leds.PlayEffect(c.Robot().UB(), o, col)
+			}
+			return leds.Set(c.Robot().UB(), o, col)
+		}
+		if *ledExp {
+			log.Warn("LED experiment endpoints enabled: a malformed payload will abort this process")
+			setLEDRaw = func(payload string) error {
+				return leds.SendRaw(c.Robot().UB(), payload)
+			}
+		} else {
+			setLED = nil
+		}
 	}
 	if cleanup != nil {
 		defer cleanup()
@@ -136,6 +179,7 @@ func main() {
 		Addr: *addr, StreamFPS: *streamFPS, Quality: *quality,
 		StatusFn: statusFn, Log: log,
 		VehicleID: vehicleID(), VehicleName: vehicleName(), AppID: *appID,
+		SetLED: setLED, SetLEDRaw: setLEDRaw,
 	}, gov, hub)
 	srv.SetRecorder(rec)
 
@@ -224,24 +268,17 @@ func connectRobot(log *slog.Logger) (*robomaster.Client, func() teleop.Status, f
 	}
 	l := logger.New(level)
 
-	var (
-		c   *robomaster.Client
-		err error
-	)
-	if *wifiDirect {
-		c, err = robomaster.NewWifiDirect(l)
-	} else {
-		c, err = robomaster.New(l, *appID)
-	}
+	// Discovery binds UDP :45678 and only one process can hold it at a time: the
+	// library sets SO_REUSEADDR, which is not sufficient on Darwin without
+	// SO_REUSEPORT. Two workers starting together race, and the loser has to go
+	// next — Find() releases the port as soon as it has its robot.
+	//
+	// The retry builds a **fresh client** every attempt. Calling Start twice on
+	// one client cannot work: Start calls ub.Start() before reaching discovery,
+	// so a second call fails with "unity bridge already started" and reports
+	// that instead of the real problem.
+	c, err := startWithDiscoveryRetry(l, log)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("creating client: %w", err)
-	}
-	// Discovery binds UDP :45678, and only one process can hold it at a time:
-	// the library sets SO_REUSEADDR, which is not sufficient on Darwin without
-	// SO_REUSEPORT. Two workers starting together therefore race, and the loser
-	// used to die. It is a wait, not a failure — Find() releases the port as
-	// soon as it has its robot, so the loser simply needs to go next.
-	if err := startWithDiscoveryRetry(c, log); err != nil {
 		return nil, nil, nil, err
 	}
 	if !c.Robot().WaitForDevices(20 * time.Second) {
@@ -530,18 +567,33 @@ func discoveryBusy(err error) bool {
 		strings.Contains(err.Error(), "address already in use")
 }
 
-func startWithDiscoveryRetry(c *robomaster.Client, log *slog.Logger) error {
+func startWithDiscoveryRetry(l *logger.Logger, log *slog.Logger) (*robomaster.Client, error) {
 	const (
 		attempts = 12
 		wait     = 5 * time.Second
 	)
 	for i := 1; ; i++ {
-		err := c.Start()
-		if err == nil {
-			return nil
+		var (
+			c   *robomaster.Client
+			err error
+		)
+		if *wifiDirect {
+			c, err = robomaster.NewWifiDirect(l)
+		} else {
+			c, err = robomaster.New(l, *appID)
 		}
+		if err != nil {
+			return nil, fmt.Errorf("creating client: %w", err)
+		}
+
+		err = c.Start()
+		if err == nil {
+			return c, nil
+		}
+		_ = c.Stop()
+
 		if !discoveryBusy(err) || i >= attempts {
-			return fmt.Errorf("starting client: %w", err)
+			return nil, fmt.Errorf("starting client: %w", err)
 		}
 		log.Info("another vehicle is using the discovery port; waiting our turn",
 			"attempt", i, "of", attempts, "retry_in", wait)

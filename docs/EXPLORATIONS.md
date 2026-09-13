@@ -34,6 +34,12 @@ Most ideas below live or die on this table, so it comes first. From the
 | `KeyGimbalAttitude` — where the turret points | **available and decoded** |
 | `KeyRobomasterMainControllerRelativePosition` | readable, **value type undecoded** — raw bytes |
 | `KeyVision*` — the S1's native marker, tracking and detection results | present, **all undecoded** |
+| `KeyRobomasterTOF*` — the distance-sensor subsystem | present in firmware, **answers `-1` unsupported** |
+
+A note on reading that last row, because it is the difference between "try
+harder" and "stop": an *unsupported* key and an *empty* one look nothing alike.
+Unsupported answers `Error: 0xFFFFFFFF` with no value; a supported key answers
+`Error: 0` even when it has nothing to report. `cmd/s1tof` asks, safely.
 
 Two consequences worth internalising before planning anything:
 
@@ -104,6 +110,47 @@ would"* — with **"a depth sensor is added"** written down as a revisit
 condition. So this is not a garnish; it is the named trigger for revisiting the
 most consequential decision in the repo.
 
+### Answered first: the S1 has no distance sensor, and cannot take DJI's
+
+The firmware carries a complete time-of-flight subsystem — `TOFConnection`,
+`TOFOnlineModules`, `TOFInfoSubscribe`, `EnableTOFInfoSubscribe`, and **four**
+`TOFFirmwareVersion` keys, behind `RMTOFParamInfoSubscribeMsg`. That is DJI's
+distance-sensor accessory from the RoboMaster EP line, and it looked like a far
+better answer than a bolt-on pod: readings over the bridge we already speak, on
+the robot's own power, with no extra Wi-Fi client competing with the video.
+
+**The robot says no.** Asked directly, every TOF key answers
+`Error: 0xFFFFFFFF` with an empty value:
+
+| key | result |
+|---|---|
+| `KeyRobomasterTOFConnection` | `-1`, empty |
+| `KeyRobomasterTOFOnlineModules` | `-1`, empty |
+| `KeyRobomasterTOFFirmwareVersion1` | `-1`, empty |
+| `KeyRobomasterTOFFirmwareVersion2` | `-1`, empty |
+
+That is *unsupported*, not *nothing attached*. Other keys in the same session
+answered `Error: 0` with real values — gimbal attitude, battery percentage — so
+the robot distinguishes the two clearly. The S1 does not implement the
+subsystem, and no accessory will change that.
+
+So the pod described above stands as the way to get depth. Nothing was spent
+finding this out.
+
+**`cmd/s1tof` is the probe**, and the technique generalises to any undecoded
+key. Reading one is not free: the reply is dispatched through
+`result.NewFromJSON`, which calls `key.ResultValue()` — and that panics for a
+key with no decoded type. Two things make it safe:
+
+  - **Pass a nil callback.** In `notifyCallbacks` the decode sits inside
+    `if c != nil`, so a nil callback means the reply is never decoded.
+  - **Read the answer from the trace log.** `eventCallback` traces the raw
+    bytes before dispatching, at `LevelTrace` — which is *below* Debug, so
+    `-v` is not low enough.
+
+`AddEventTypeListener` looks like the obvious raw path and is not: `eventCallback`
+returns early for `TypeGetValue`, with a `TODO` upstream acknowledging it.
+
 ### The architecture that seems right
 
 An **independent pod** — microcontroller, sensors, its own battery, its own
@@ -140,6 +187,88 @@ real price. **You take on a second embedded platform** — firmware, mounts, and
 another battery to charge. *Status:* nothing built, nothing ordered.
 
 ---
+
+## Telling two vehicles apart by their LEDs
+
+**What it would unlock.** Two robots driven from one console are currently told
+apart by battery percentage and by what their cameras see. Colouring each one's
+armour LEDs would make identification physical and instant.
+
+**Status: unresolved. The message is understood; the robot ignores it.**
+
+### What is established
+
+`KeyRobomasterSystemLEDColor` is writable, carries no decoded type upstream, and
+is never written anywhere in `brunoga/robomaster`. Its payload is JSON, parsed
+natively by `json_dto`, and the schema is now known:
+
+```json
+{"deviceID":0,"controlMode":0,"R":255,"G":0,"B":0,
+ "flashMode":0,"loopCount":0,"time1":0,"time2":0}
+```
+
+The channels are **uppercase** `R`, `G`, `B`. Every lowercase guess fails, and
+`strings` cannot reveal them — it defaults to a four-character minimum, so they
+had to be read from the binary's raw bytes. DJI's own library names the struct
+`RMLEDColorMsg`, under `RMSystemParamLEDColor`.
+
+`KeyRobomasterSystemLEDLightEffect` is a different thing entirely:
+`{EffectID, Percent, EffectEnable}` — it plays *named preset* effects, not a
+colour.
+
+### What was tried, and what happened
+
+A correctly-shaped message is accepted and **changes nothing**. Verified with
+the two robots facing each other, reading one's LEDs from the other's camera
+and sampling the pixels, across every combination of `deviceID` (0–7, 255),
+`controlMode` (0–2) and `flashMode` (0–2), plus the effect key. The LEDs stayed
+their default teal in all of them.
+
+### The most likely reason we cannot see the answer
+
+**The send path discards the robot's reply.** These are fire-and-forget events
+with no callback registered, so if the robot is rejecting the command — wrong
+mode, missing permission, some state the DJI app sets that we do not — the
+rejection is invisible. Reading that response is the obvious next step, and it
+needs care: `unitybridge.SetKeyValue` **panics** on a key with no decoded type,
+because `key.ResultValue()` panics rather than returning an error.
+
+### The cost of getting this wrong, which is unusually high
+
+A malformed payload throws an **uncaught C++ exception inside DJI's library**.
+That aborts the process — Go cannot recover — and the robot then refuses new
+connections for roughly a minute afterwards. Each wrong guess costs a restart
+and takes a vehicle out of service, which is why the field names were read from
+the binary rather than discovered one crash at a time.
+
+`internal/leds` holds what is known. Both endpoints stay behind
+`-led-experiment`: a control that silently does nothing should not look like a
+feature, and one that can abort the vehicle process should not be reachable by
+default.
+
+## What the S1's own vision reports — unprobed, and now cheap to ask
+
+Hunting for LED fields turned up a neighbouring block that looks like the
+onboard detector's output:
+
+```
+Rects · RectX · RectY · RectW · RectH · Color · Distance · Pitch · Yaw · Roll
+```
+
+**`Distance` is the interesting word**, and it is also the one to be careful
+about. A field-name table carries no struct boundaries, so adjacency does not
+prove these belong to one message — the first `Distance` in the binary turned
+out to be part of `RMVisionParamTrackingDistance`, which is *write* access: a
+setting, not a reading. This is a lead, not a finding.
+
+If it is real and readable, it bears on the depth question DECISIONS.md #15
+names as the blocker for automated movement triggers, possibly with no bolt-on
+hardware at all. That is worth an hour of somebody's time.
+
+`cmd/s1tof` already knows how to ask: `KeyVisionDebugRect`,
+`KeyVisionDetectionEnable` and the running-status keys are all readable, and the
+probe reads undecoded keys without the decode that would otherwise panic. The
+keys are listed in the command; nobody has run it against them yet.
 
 ## Smaller threads
 

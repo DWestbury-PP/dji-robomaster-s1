@@ -7,7 +7,7 @@
 > [M3.md](M3.md), [M4.md](M4.md), [BAKEOFF.md](BAKEOFF.md). Investigations:
 > [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
-## Where things stand (2026-09-04)
+## Where things stand (2026-09-13)
 
 **A working control system with an observer aboard.** A stock, unmodified S1
 driven from a browser over the house Wi-Fi, through a safety layer that stops
@@ -258,8 +258,8 @@ change for them.
    joined to the house network at `192.168.1.x`. It is **better on every
    measure that matters**, not merely more convenient: jitter fell ~7× and the
    p99 tail 3× against direct mode (ARCHITECTURE.md §6). Dual-homing is gone —
-   one network for Redis, Ollama and the robot. Router mode is now the default
-   for both binaries; `-wifi-direct` opts back out.
+   one network for Ollama and the robot. Router mode is now the default for
+   both binaries; `-wifi-direct` opts back out.
 4. ~~**Two vehicles at once.**~~ **Answered 2026-09-13 — yes, one process each.**
    The bridge singleton is real and now verified in the source, but it is
    process-local: two processes each initialise their own bridge fine. The only
@@ -267,6 +267,31 @@ change for them.
    wall. Built and driven from one console (DECISIONS.md #21).
 5. **Path C camera.** If we ever replace the intelligent controller, does the FPV
    camera and Wi-Fi go with it? Assumed yes, unverified. Bench question.
+
+8. **LED colour control.** Open, and it is the *values* that are missing, not
+   the shape. `KeyRobomasterSystemLEDColor` takes
+   `{deviceID, controlMode, R, G, B, flashMode, loopCount, time1, time2}` —
+   read out of DJI's binary, uppercase channels — and a correctly formed
+   message is accepted and changes nothing. Swept `deviceID` 0–7 and 255,
+   `controlMode` 0–2, `flashMode` 0–2, and the separate effect key, watching one
+   robot's LEDs through the other's camera. Teal throughout. The next move is
+   reading the robot's *reply*, which these fire-and-forget sends discard —
+   `cmd/s1tof` now shows how to do that safely. See EXPLORATIONS.md.
+
+9. ~~**Does the S1 have a distance sensor?**~~ **Answered 2026-09-13 — no, and
+   it cannot take DJI's.** The firmware carries the whole EP time-of-flight
+   subsystem, but every TOF key answers `Error: 0xFFFFFFFF` with an empty
+   value — *unsupported*, not *unpopulated*, since other keys in the same
+   session answered `Error: 0` with real data. Depth still needs a bolt-on
+   (EXPLORATIONS.md), which is what DECISIONS.md #15 names as its revisit
+   condition.
+
+10. **What the S1's own vision reports.** `KeyVisionDebugRect` and its
+    neighbours are the onboard detector's output, and the binary's field table
+    puts `Rects · RectX · RectY · RectW · RectH · Color · Distance` together.
+    Whether that `Distance` is real, and whether it belongs to that message at
+    all, is unproven — string tables carry no struct boundaries. `cmd/s1tof`
+    makes asking cheap; nobody has yet.
 6. ~~**foveate M8.**~~ **Moot 2026-09-05.** It was the prerequisite only for the
    Redis-bus version of M4. DECISIONS.md #14 built M4 on an HTTP transport
    inside this repo, so there is nothing to sequence in the foveate session and
@@ -276,6 +301,33 @@ change for them.
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 7 (2026-09-13, afternoon).** Two vehicles, one console. Answered open
+question #4 from the source rather than by assumption: the bridge singleton is
+real but process-local, and the only thing stopping a second vehicle was our own
+discovery binding UDP `:45678` — `SO_REUSEADDR` is not sufficient on Darwin
+without `SO_REUSEPORT`, verified directly. `Find()` releases the port on return,
+so staggering startup is enough. Built the supervisor/worker split, per-tab
+selection and a fleet-wide e-stop that survives a worker reconnect, then drove
+both robots from one browser.
+
+Then chased LED colour control to identify the vehicles by sight, and did not
+get there. Mapped the whole message — the field names came out of DJI's binary
+after the first wrong guess aborted the process — and the robot accepts it and
+ignores it. Probed the firmware's time-of-flight subsystem hoping for a cheap
+depth sensor and got a clean, useful no.
+
+Three things worth keeping. **The oracle for undecoded keys is the binary, not
+trial and error**: each wrong payload throws an uncaught C++ exception that
+aborts the process and leaves the robot refusing connections for about a minute,
+while the field names are sitting in the `.dylib` as literals — invisible to
+`strings`, which defaults to a four-character minimum. **The operator's idea of
+pointing the two robots at each other** turned LED verification from "ask a human
+after every attempt" into an automated pixel check. And **a retry I had added
+could never have worked**: `Client.Start()` starts the bridge before it reaches
+discovery, so retrying on the same client reports "unity bridge already started"
+instead of the real problem. Found because a stray `s1find` of mine was holding
+the port.
 
 **Session 5 (2026-09-05, evening).** Built the fast tier (Python/YOLO, 7–17 ms),
 the experience log (on by default, recording both requested and applied

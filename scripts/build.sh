@@ -12,7 +12,10 @@ mkdir -p bin
 export CGO_ENABLED=1
 export GOARCH=amd64
 
-for cmd in s1probe s1teleop s1find s1capture s1bakeoff s1narrate; do
+# Discovered rather than listed: a hardcoded list silently stops building a new
+# command, which is exactly what happened when s1tof was added.
+for dir in cmd/*/; do
+  cmd="$(basename "$dir")"
   go build -o "bin/${cmd}" "./cmd/${cmd}"
   echo "built bin/${cmd}"
   file "bin/${cmd}" | sed 's/^/  /'
