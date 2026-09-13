@@ -81,6 +81,7 @@ See ARCHITECTURE.md §7.
 | M4.9 — hide boxes / narration | ✅ done |
 | M4.5 — advisory looming highlight | queued |
 | M5 — multi-vehicle: process per robot, switchable console | ✅ **done — two vehicles, one dropdown** |
+| M5.1 — per-vehicle perception, and a flat battery not stopping the rest | ✅ done |
 | M5 — mobile app | not started |
 | ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
 
@@ -187,9 +188,17 @@ live in `NOTICE`.
 
 ```bash
 ./scripts/build.sh
-./bin/s1find        # is the robot on the network?
-./scripts/start.sh  # all three processes; Ctrl-C stops them together
+./bin/s1find                              # which robots are on the network?
+./scripts/start.sh                        # one vehicle
+S1_VEHICLES="Alpha,Bravo" ./scripts/start.sh   # two, switchable in the console
 ```
+
+With `S1_VEHICLES` each robot gets its own worker process, its own detector and
+its own narrator, plus a supervisor on :8700 holding no bridge. **A vehicle whose
+battery is flat does not stop the rest** — it shows in the dropdown as
+`Bravo (down)` and you drive the ones that are charged. Both robots currently
+share an app ID, so which name lands on which robot is a coin toss; tell them
+apart by battery percentage or by what their cameras see (SETUP.md §4a).
 
 `start.sh` runs the console, the observer and the detector, logging each to
 `logs/run/`. It skips the observer if Ollama is not answering and the detector
