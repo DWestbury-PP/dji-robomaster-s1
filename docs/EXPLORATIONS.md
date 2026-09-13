@@ -141,6 +141,78 @@ another battery to charge. *Status:* nothing built, nothing ordered.
 
 ---
 
+## Telling two vehicles apart by their LEDs
+
+**What it would unlock.** Two robots driven from one console are currently told
+apart by battery percentage and by what their cameras see. Colouring each one's
+armour LEDs would make identification physical and instant.
+
+**Status: unresolved. The message is understood; the robot ignores it.**
+
+### What is established
+
+`KeyRobomasterSystemLEDColor` is writable, carries no decoded type upstream, and
+is never written anywhere in `brunoga/robomaster`. Its payload is JSON, parsed
+natively by `json_dto`, and the schema is now known:
+
+```json
+{"deviceID":0,"controlMode":0,"R":255,"G":0,"B":0,
+ "flashMode":0,"loopCount":0,"time1":0,"time2":0}
+```
+
+The channels are **uppercase** `R`, `G`, `B`. Every lowercase guess fails, and
+`strings` cannot reveal them — it defaults to a four-character minimum, so they
+had to be read from the binary's raw bytes. DJI's own library names the struct
+`RMLEDColorMsg`, under `RMSystemParamLEDColor`.
+
+`KeyRobomasterSystemLEDLightEffect` is a different thing entirely:
+`{EffectID, Percent, EffectEnable}` — it plays *named preset* effects, not a
+colour.
+
+### What was tried, and what happened
+
+A correctly-shaped message is accepted and **changes nothing**. Verified with
+the two robots facing each other, reading one's LEDs from the other's camera
+and sampling the pixels, across every combination of `deviceID` (0–7, 255),
+`controlMode` (0–2) and `flashMode` (0–2), plus the effect key. The LEDs stayed
+their default teal in all of them.
+
+### The most likely reason we cannot see the answer
+
+**The send path discards the robot's reply.** These are fire-and-forget events
+with no callback registered, so if the robot is rejecting the command — wrong
+mode, missing permission, some state the DJI app sets that we do not — the
+rejection is invisible. Reading that response is the obvious next step, and it
+needs care: `unitybridge.SetKeyValue` **panics** on a key with no decoded type,
+because `key.ResultValue()` panics rather than returning an error.
+
+### The cost of getting this wrong, which is unusually high
+
+A malformed payload throws an **uncaught C++ exception inside DJI's library**.
+That aborts the process — Go cannot recover — and the robot then refuses new
+connections for roughly a minute afterwards. Each wrong guess costs a restart
+and takes a vehicle out of service, which is why the field names were read from
+the binary rather than discovered one crash at a time.
+
+`internal/leds` holds what is known. Both endpoints stay behind
+`-led-experiment`: a control that silently does nothing should not look like a
+feature, and one that can abort the vehicle process should not be reachable by
+default.
+
+## A bonus find: the vision schema
+
+Hunting for LED fields turned up the neighbouring block, which appears to be the
+S1's own vision output:
+
+```
+Rects · RectX · RectY · RectW · RectH · Color · Distance · Pitch · Yaw · Roll
+```
+
+`Distance` is the interesting word. If that is real and reachable, it bears
+directly on the depth question that DECISIONS.md #15 names as the blocker for
+automated movement triggers — possibly without any bolt-on sensor at all. The
+same binary-reading technique would apply. Nobody has tried.
+
 ## Smaller threads
 
 **Decode the position and vision keys.** The self-contained reverse-engineering
