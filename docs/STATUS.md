@@ -340,6 +340,23 @@ watch one robot. `start.sh` now starts a tier pair per vehicle, each aimed at it
 own worker. Verified by reading perception back through the supervisor for both
 vehicles rather than by assuming the fix worked.
 
+**Session 9 (2026-09-13, evening).** Planning, not building. Surveyed the drone
+ecosystem for a ready-made sensor pack and landed on a distinction worth
+recording: a flight controller is the wrong shape — most of its value is motor
+control and a barometer, and it has no network, so an ESP32 ends up bolted on
+regardless — while the ecosystem's **sensor modules** are exactly the jump-start,
+because they come with working calibrated drivers.
+
+The find that changes an earlier conclusion is **optical flow**. EXPLORATIONS.md
+had said off-screen beacons would need tags at measured fixed positions, because
+Mecanum wheels slip and wheel odometry drifts too fast. Flow measures ground
+velocity optically and never consults a wheel, so slip is invisible to it — and
+its two usual weaknesses, unknown scale and varying height, both largely vanish
+on a robot sitting at fixed height on a textured floor. A flow-plus-rangefinder
+board answers depth and velocity with one part. Revised the entry accordingly,
+including what stays unproven: flow still integrates, so it still drifts, just
+more slowly than wheels.
+
 **Session 5 (2026-09-05, evening).** Built the fast tier (Python/YOLO, 7–17 ms),
 the experience log (on by default, recording both requested and applied
 control), and overlay toggles for boxes and narration. Audited and published the
