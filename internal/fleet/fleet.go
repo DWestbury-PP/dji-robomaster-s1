@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -24,15 +25,24 @@ type Fleet struct {
 	estopped atomic.Bool
 }
 
+// New builds a fleet from entries of the form "addr" or "Name=addr". The name
+// form lets the console label a vehicle that never comes up.
 func New(addrs []string, log *slog.Logger) *Fleet {
 	if log == nil {
 		log = slog.Default()
 	}
 	f := &Fleet{log: log, byID: make(map[string]*Worker, len(addrs))}
-	for _, a := range addrs {
-		w := NewWorker(a, log)
+	for _, entry := range addrs {
+		name, addr := "", entry
+		if i := strings.Index(entry, "="); i > 0 {
+			name, addr = entry[:i], entry[i+1:]
+		}
+		w := NewWorker(addr, name, log)
 		f.workers = append(f.workers, w)
-		f.byID[a] = w
+		f.byID[addr] = w
+		if name != "" {
+			f.byID[name] = w
+		}
 	}
 	return f
 }

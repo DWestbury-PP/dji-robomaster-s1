@@ -54,14 +54,21 @@ type Worker struct {
 	up   atomic.Bool
 }
 
-func NewWorker(addr string, log *slog.Logger) *Worker {
+// NewWorker creates a handle to one vehicle process. The name is what the
+// console shows before the worker answers for itself — which matters most when
+// it never does: a vehicle whose robot is switched off should still appear in
+// the dropdown as "Bravo (down)" rather than as a bare address.
+func NewWorker(addr, name string, log *slog.Logger) *Worker {
 	if log == nil {
 		log = slog.Default()
+	}
+	if name == "" {
+		name = addr
 	}
 	return &Worker{
 		Addr:  addr,
 		log:   log.With("worker", addr),
-		ident: Identity{ID: addr, Name: addr},
+		ident: Identity{ID: name, Name: name},
 	}
 }
 

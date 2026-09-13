@@ -75,16 +75,31 @@ that already exists. *Limitation:* only while the other robot is in frame.
 *Status:* nothing built. This is the obvious first step and it de-risks Tier 2,
 which needs the same calibration and the same pipeline.
 
-### Tier 2 — "somewhere over there". A shared frame, and this is where a map appears.
+### Tier 2 — "somewhere over there". A shared frame, and where a map may appear.
 
-An off-screen direction arrow needs both robots in one coordinate system. The
-cheap version is not SLAM: it is **tags at measured fixed positions**. Each
-robot re-localises exactly when it sees one and interpolates between sightings.
-The "map" is a handful of coordinates written on paper.
+An off-screen direction arrow needs both robots in one coordinate system. This
+entry originally said that meant **tags at measured fixed positions**, because
+Mecanum wheels slip by design and wheel odometry drifts too fast to dead-reckon
+between them. That is still true of *wheel* odometry. It is not the only kind.
 
-*Cost:* the tags, measuring them, and the interpolation. Practical indoors;
-outdoors it needs posts. *Unverified:* how quickly the estimate becomes useless
-between sightings — that is the number this would need to produce.
+**Optical flow measures ground velocity optically, and does not care what the
+wheels are doing.** A PMW3901-class sensor looking at the floor reports how fast
+the floor is moving underneath it. Slip is invisible to it, because it never
+consults a wheel. That removes the specific reason anchors looked mandatory.
+
+Flow has two classic weaknesses — unknown scale, and varying height above the
+surface — and **both largely vanish on a ground robot**, which sits at a fixed,
+known height on a textured floor. These are better conditions than the sensor
+was designed for. Pair it with a downward rangefinder and the scale is pinned
+too.
+
+*What is still unproven:* how far the estimate drifts over minutes of real
+driving, which is the number this would have to produce before any beacon is
+placed from it. Flow integrates velocity, so it accumulates error like any dead
+reckoning — more slowly than wheels, not never. Tags may still earn their place
+as an occasional re-anchor rather than as the primary mechanism.
+
+*Where flow gives nothing:* a featureless floor, and darkness.
 
 ### Tier 3 — monocular SLAM.
 
@@ -153,10 +168,18 @@ returns early for `TypeGetValue`, with a `TODO` upstream acknowledging it.
 
 ### The architecture that seems right
 
-An **independent pod** — microcontroller, sensors, its own battery, its own
+An **independent pod** — microcontroller, sensors, its own power, its own
 Wi-Fi — that posts to `/perception` like any other producer. It touches no DJI
 firmware, which matters on a robot carrying a staged update nobody wants
 installed, and it can be built and tested with no robot present.
+
+**Power is the one tap worth considering.** The photographed expansion bay
+exposes a `POWER` pin alongside `M BUS`, `CAN BUS`, `UART`, `PWM OUTPUT` and
+`S-BUS`. Taking supply from the S1's own 3S pack would remove the ongoing cost
+named below — a second battery to charge and track — without any of the protocol
+questions, because power is just power. Tapping a *data* bus buys nothing by
+comparison: a sensor wired to that UART talks to the robot's controller, which
+has no route to forward it to us (see the Sensor Adapter question above).
 
 This is the existing seam (#14, #20): another process with its own runtime and
 cadence, posting dated observations. Two constraints carry over — readings need
@@ -185,6 +208,52 @@ map, without needing line of sight to a tag.
 *Honest cost:* roughly $60–70 a vehicle plus anchors, but the money is not the
 real price. **You take on a second embedded platform** — firmware, mounts, and
 another battery to charge. *Status:* nothing built, nothing ordered.
+
+### Borrowing from the drone ecosystem
+
+Hobby aircraft solved "small, light, integrated sensor package" years ago, and
+most of that work transfers. But the obvious thing to reach for is the wrong
+one.
+
+**A flight controller is the wrong shape.** Most of its value is motor control
+and a barometer, and we need neither — the S1 drives itself, and baro altitude
+is meaningless on a floor. More decisively, **it does not solve the problem that
+actually matters**: an FC has UARTs, I2C and SPI but no network. Data still has
+to reach the Mac, and the robot will not carry it for us, so an ESP32 ends up
+bolted on anyway — two boards where one would do.
+
+**The sensor modules are the jump-start.** The value is not the board, it is
+inheriting working, calibrated drivers instead of writing them.
+
+| what we want | what the ecosystem sells |
+|---|---|
+| Distance ahead | ToF rangefinder — TF-Luna class (~8 m, UART) or VL53L1X (~4 m, I2C) |
+| Ground velocity without wheel slip | Optical flow — PMW3901 class |
+| **Both, one board, one UART** | **Matek 3901-L0X class** — flow + rangefinder, ~3 g, ~$25 |
+| Absolute heading | GPS+compass combo module — wanted for the magnetometer, not the GNSS |
+| Where the *other* robot is | **nothing** — drones do not need robot-to-robot ranging. Still UWB. |
+
+A flow-plus-rangefinder board is the strongest single candidate here, because it
+answers two open questions with one part: depth ahead for DECISIONS.md #15, and
+slip-free velocity for Tier 2 above.
+
+**The shape that follows:**
+
+```
+ flow + rangefinder board ──UART──► ESP32 ──Wi-Fi──► POST /perception
+```
+
+The ESP32 does almost nothing — read a serial protocol, post JSON — which is a
+far smaller firmware job than driving sensors directly.
+
+**One wrinkle before ordering:** these boards speak **MSP**, Betaflight and
+iNav's protocol, not plain serial numbers on a wire. MSP is documented and
+straightforward, but it is something to implement rather than read.
+
+**Treat every part number here as a category, not a recommendation.** They are
+written from memory, this market churns, and models are discontinued and revised
+constantly. Verify current availability and specifications before spending
+anything.
 
 ---
 
