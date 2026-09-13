@@ -48,6 +48,14 @@ transport exists to remove. **Slow tiers must pull** (DECISIONS.md #14).
 
 Three processes: two Go, one Python. `scripts/start.sh` runs all three.
 
+**With more than one vehicle** there is one `s1teleop` per robot, plus one more
+running as a supervisor that holds no bridge. The supervisor serves the console
+and relays each browser session's commands to the worker that session selected;
+every clamp still happens in that worker's governor, on the last hop before its
+own wire. Switching sends no stop — relaying ceases and the deadman does it,
+the same path as a closed tab (DECISIONS.md #21). E-stop is the one message the
+supervisor does not simply relay: it fans out to every vehicle.
+
 ### `s1teleop` (Go) — the only thing that touches the robot
 
 Holds the single UnityBridge handle, and therefore owns **both** control and
@@ -294,6 +302,8 @@ numbers. This one does not.
 [x] M4.4 — The experience log: frames + narration + OPERATOR INPUT, time-aligned.
            On by default. Detections join it when M4.2 lands
 [ ] M4.5 — Advisory looming highlight in the console, wired to nothing
+[x] M5  — Multi-vehicle: one process per robot, a supervisor console over them,
+          per-tab selection, fleet-wide e-stop (DECISIONS.md #21)
 [ ] M5 — Mobile app — decide then whether it goes through the Mac or talks to
          the S1 directly via brunoga/robomaster-mobile (gomobile)
 

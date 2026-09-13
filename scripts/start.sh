@@ -6,10 +6,20 @@
 # (DECISIONS.md #20). They find each other over HTTP on :8700 — no broker,
 # nothing to start first (#14).
 #
-#   ./scripts/start.sh           drive the robot
-#   ./scripts/start.sh -mock     no robot: synthetic video, sink that discards
+#   ./scripts/start.sh                      drive one robot
+#   ./scripts/start.sh -mock                no robot: synthetic video
+#   S1_VEHICLES="Rover:123,Scout:456" \
+#     ./scripts/start.sh                    two robots, switchable in the UI
 #
-# Ctrl-C stops all three. Anything passed here goes to s1teleop.
+# S1_VEHICLES is a comma-separated list of name[:appID]. With more than one
+# vehicle each worker gets its own process (the DJI bridge is a process-wide
+# singleton — DECISIONS.md #9) and the console becomes a supervisor over them.
+#
+# Give every vehicle a distinct appID. Without one, each worker connects to
+# whichever robot answers its discovery first, so which name lands on which
+# robot is a coin toss.
+#
+# Ctrl-C stops everything. Anything passed here goes to the vehicle worker(s).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -118,9 +128,50 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-echo "s1teleop   → $RUNLOG/teleop.log"
-./bin/s1teleop "$@" >"$RUNLOG/teleop.log" 2>&1 &
-track $! "s1teleop" "$RUNLOG/teleop.log"
+# One vehicle is one process. Several vehicles are several processes plus a
+# supervisor, because the DJI bridge handle is process-wide (DECISIONS.md #9).
+if [[ -n "${S1_VEHICLES:-}" ]]; then
+  IFS=',' read -r -a specs <<< "$S1_VEHICLES"
+  port=8801
+  worker_addrs=""
+  missing_appid=0
+
+  for spec in "${specs[@]}"; do
+    spec="$(echo "$spec" | xargs)"
+    [[ -z "$spec" ]] && continue
+    vname="${spec%%:*}"
+    vapp="${spec#*:}"
+    [[ "$vapp" == "$spec" ]] && vapp=0
+    [[ "$vapp" == "0" ]] && missing_appid=1
+
+    vlog="$RUNLOG/vehicle-${vname}.log"
+    printf '%-10s → %s   (127.0.0.1:%s)\n' "$vname" "$vlog" "$port"
+    ./bin/s1teleop -addr "127.0.0.1:$port" -name "$vname" -appid "$vapp" "$@" >"$vlog" 2>&1 &
+    track $! "$vname" "$vlog"
+
+    worker_addrs="${worker_addrs:+$worker_addrs,}127.0.0.1:$port"
+    port=$((port + 1))
+
+    # Discovery binds one UDP port, so two workers searching at once collide.
+    # They retry and recover, but staggering keeps startup ordered and quiet.
+    sleep 2
+  done
+
+  if [[ $missing_appid -eq 1 && ${#specs[@]} -gt 1 ]]; then
+    echo
+    echo "  warning: a vehicle has no appID, so each worker takes whichever robot"
+    echo "           answers first — names may land on the wrong vehicle."
+    echo "           Give each one: S1_VEHICLES=\"Rover:123,Scout:456\""
+  fi
+
+  echo "supervisor → $RUNLOG/teleop.log"
+  ./bin/s1teleop -addr localhost:8700 -workers "$worker_addrs" >"$RUNLOG/teleop.log" 2>&1 &
+  track $! "supervisor" "$RUNLOG/teleop.log"
+else
+  echo "s1teleop   → $RUNLOG/teleop.log"
+  ./bin/s1teleop "$@" >"$RUNLOG/teleop.log" 2>&1 &
+  track $! "s1teleop" "$RUNLOG/teleop.log"
+fi
 
 
 # The console owns the frames; the other two poll it and will wait, so

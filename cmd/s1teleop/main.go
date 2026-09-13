@@ -30,6 +30,7 @@ import (
 
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/driver"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/experience"
+	"github.com/DWestbury-PP/dji-robomaster-s1/internal/fleet"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/safety"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/stick"
 	"github.com/DWestbury-PP/dji-robomaster-s1/internal/teleop"
@@ -50,12 +51,24 @@ var (
 	logNote    = flag.String("log-note", "", "Free-text note stored in the drive's manifest.")
 	mock       = flag.Bool("mock", false, "Run with no robot: synthetic video and a sink that discards. For working on the UI.")
 	verbose    = flag.Bool("v", false, "Verbose bridge logging.")
+
+	// Multi-vehicle. The DJI bridge is a process-wide singleton, so a second
+	// vehicle must be a second process (DECISIONS.md #9). Setting -workers turns
+	// this process into the supervisor for those worker processes; it then holds
+	// no bridge of its own.
+	workers  = flag.String("workers", "", "Comma-separated worker addresses (e.g. 127.0.0.1:8801,127.0.0.1:8802). Setting this runs as the supervisor: no robot of its own, a dropdown over the workers listed.")
+	nameFlag = flag.String("name", "", "Display name for the vehicle this worker drives. Shown in the supervisor's dropdown.")
 )
 
 func main() {
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	if *workers != "" {
+		runSupervisor(log)
+		return
+	}
 
 	gov := safety.New(safety.Config{
 		Deadman:    *deadman,
@@ -122,6 +135,7 @@ func main() {
 	srv := teleop.New(teleop.Config{
 		Addr: *addr, StreamFPS: *streamFPS, Quality: *quality,
 		StatusFn: statusFn, Log: log,
+		VehicleID: vehicleID(), VehicleName: vehicleName(), AppID: *appID,
 	}, gov, hub)
 	srv.SetRecorder(rec)
 
@@ -222,8 +236,13 @@ func connectRobot(log *slog.Logger) (*robomaster.Client, func() teleop.Status, f
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating client: %w", err)
 	}
-	if err := c.Start(); err != nil {
-		return nil, nil, nil, fmt.Errorf("starting client: %w", err)
+	// Discovery binds UDP :45678, and only one process can hold it at a time:
+	// the library sets SO_REUSEADDR, which is not sufficient on Darwin without
+	// SO_REUSEPORT. Two workers starting together therefore race, and the loser
+	// used to die. It is a wait, not a failure — Find() releases the port as
+	// soon as it has its robot, so the loser simply needs to go next.
+	if err := startWithDiscoveryRetry(c, log); err != nil {
+		return nil, nil, nil, err
 	}
 	if !c.Robot().WaitForDevices(20 * time.Second) {
 		_ = c.Stop()
@@ -428,5 +447,104 @@ func mockVideo(ctx context.Context, hub *teleop.FrameHub) {
 			}
 			hub.Submit(pix, w, h)
 		}
+	}
+}
+
+// vehicleID is how a supervisor addresses this worker. The listen address is a
+// serviceable default: it is unique per worker by construction.
+func vehicleID() string {
+	if *nameFlag != "" {
+		return *nameFlag
+	}
+	return *addr
+}
+
+func vehicleName() string {
+	if *nameFlag != "" {
+		return *nameFlag
+	}
+	return *addr
+}
+
+// runSupervisor serves the console over a set of worker processes, holding no
+// bridge itself. Every command is relayed to the selected worker untouched:
+// the governor that clamps it lives there, on the last hop before that
+// vehicle's wire, which is the property #6 exists to protect.
+func runSupervisor(log *slog.Logger) {
+	addrs := splitAddrs(*workers)
+	if len(addrs) == 0 {
+		log.Error("no worker addresses given")
+		os.Exit(1)
+	}
+
+	ctx, cancel := signalContext()
+	defer cancel()
+
+	f := fleet.New(addrs, log)
+	go f.Run(ctx)
+
+	sup := teleop.NewSupervisor(f, log)
+
+	httpSrv := &http.Server{
+		Addr:              *addr,
+		Handler:           sup.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() {
+		<-ctx.Done()
+		shutCtx, c2 := context.WithTimeout(context.Background(), 3*time.Second)
+		defer c2()
+		_ = httpSrv.Shutdown(shutCtx)
+	}()
+
+	fmt.Printf("\n  console:   http://%s   (supervisor — no robot of its own)\n", *addr)
+	fmt.Printf("  vehicles:  %d worker(s)\n", len(addrs))
+	for _, a := range addrs {
+		fmt.Printf("             %s\n", a)
+	}
+	fmt.Printf("  e-stop:    stops EVERY vehicle, whoever presses it\n")
+	fmt.Println()
+
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error("http server", "err", err)
+	}
+	cancel()
+	log.Info("supervisor stopped; each vehicle's deadman stops its own robot")
+}
+
+func splitAddrs(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// discoveryBusy reports whether an error is another process holding the
+// discovery port, rather than a robot that is genuinely unreachable. The two
+// need very different advice, so they must not be reported the same way.
+func discoveryBusy(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "45678") &&
+		strings.Contains(err.Error(), "address already in use")
+}
+
+func startWithDiscoveryRetry(c *robomaster.Client, log *slog.Logger) error {
+	const (
+		attempts = 12
+		wait     = 5 * time.Second
+	)
+	for i := 1; ; i++ {
+		err := c.Start()
+		if err == nil {
+			return nil
+		}
+		if !discoveryBusy(err) || i >= attempts {
+			return fmt.Errorf("starting client: %w", err)
+		}
+		log.Info("another vehicle is using the discovery port; waiting our turn",
+			"attempt", i, "of", attempts, "retry_in", wait)
+		time.Sleep(wait)
 	}
 }
