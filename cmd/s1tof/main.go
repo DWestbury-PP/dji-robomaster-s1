@@ -45,6 +45,20 @@ var probes = []*key.Key{
 	key.KeyRobomasterTOFFirmwareVersion1,
 	key.KeyRobomasterTOFFirmwareVersion2,
 
+	// The Sensor Adapter: DJI's breakout with analog and digital IO for
+	// third-party sensors. If this answers, a distance sensor can be read over
+	// the bridge we already speak — no second radio, no second battery.
+	key.KeyRobomasterSensorAdapterConnection,
+	key.KeyRobomasterSensorAdapterOnlineModules,
+	key.KeyRobomasterSensorAdapterFirmwareVersion1,
+
+	// The Servo subsystem, same shape, worth asking while we are here.
+	key.KeyRobomasterServoConnection,
+	key.KeyRobomasterServoOnlineModules,
+
+	// Whether the expansion bus itself reports a firmware version at all.
+	key.KeyRobomasterSystemCANFirmwareVersion,
+
 	// The onboard vision system, which is the other candidate for "does this
 	// robot already know something is in front of it?".
 	key.KeyVisionFirmwareVersion,
