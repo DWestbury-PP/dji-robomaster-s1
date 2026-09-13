@@ -68,10 +68,20 @@ alive() {
 pids=()
 names=()
 logs=()
+fatal=()
 died=""
 
 # Record a started process so a later death can be reported against its log.
-track() { pids+=("$1"); names+=("$2"); logs+=("$3"); }
+# track records a process so a later death can be reported against its log.
+# The fourth argument says whether that death should stop everything.
+#
+# Only the console is fatal. A vehicle that will not connect is a normal state
+# the console already renders — the dropdown shows it as "(down)" — and taking
+# the whole stack down because one robot's battery is flat means you cannot
+# drive the robot that *is* charged.
+track() {
+  pids+=("$1"); names+=("$2"); logs+=("$3"); fatal+=("${4:-yes}")
+}
 
 # Kill a child and anything it spawned. `uv run` execs the interpreter as a
 # grandchild, so killing the child alone leaves a detector holding the GPU and
@@ -151,9 +161,9 @@ if [[ -n "${S1_VEHICLES:-}" ]]; then
     vlog="$RUNLOG/vehicle-${vname}.log"
     printf '%-10s → %s   (127.0.0.1:%s)\n' "$vname" "$vlog" "$port"
     ./bin/s1teleop -addr "127.0.0.1:$port" -name "$vname" -appid "$vapp" "$@" >"$vlog" 2>&1 &
-    track $! "$vname" "$vlog"
+    track $! "$vname" "$vlog" no
 
-    worker_addrs="${worker_addrs:+$worker_addrs,}127.0.0.1:$port"
+    worker_addrs="${worker_addrs:+$worker_addrs,}${vname}=127.0.0.1:$port"
     # Perception is per-vehicle, so each vehicle needs its own tiers. Pointing
     # them all at the supervisor does not work: with no ?vehicle= it resolves to
     # whichever vehicle is up first, so one robot gets watched and the other
@@ -200,14 +210,14 @@ for target in ${tier_targets[@]+"${tier_targets[@]}"}; do
     nlog="$RUNLOG/narrate${suffix}.log"
     printf '%-10s → %s\n' "narrate${suffix}" "$nlog"
     ./bin/s1narrate -v -console "http://$vaddr" >"$nlog" 2>&1 &
-    track $! "s1narrate${suffix}" "$nlog"
+    track $! "s1narrate${suffix}" "$nlog" no
   fi
 
   if [[ $have_detector -eq 1 ]]; then
     dlog="$RUNLOG/detect${suffix}.log"
     printf '%-10s → %s\n' "detect${suffix}" "$dlog"
     ( cd perception/detector && uv run detect.py -v --console "http://$vaddr" ) >"$dlog" 2>&1 &
-    track $! "detector${suffix}" "$dlog"
+    track $! "detector${suffix}" "$dlog" no
     # Ours to kill, but not ours to have announced: without this bash prints a
     # "Terminated" job notice into the middle of the failure report.
     disown %% 2>/dev/null || true
@@ -223,13 +233,26 @@ echo
 # stack: a console that died silently looks exactly like a robot that is off.
 #
 # Polled rather than `wait -n`, which macOS's bash 3.2 does not have.
+reported=""
+
 while :; do
   i=0
   while [[ $i -lt ${#pids[@]} ]]; do
-    if ! alive "${pids[$i]}"; then
+    if alive "${pids[$i]}"; then
+      :
+    elif [[ "${fatal[$i]}" == "yes" ]]; then
       died="${names[$i]}"
       died_log="${logs[$i]}"
       exit 1
+    elif [[ "$reported" != *"|${names[$i]}|"* ]]; then
+      # Say it once, then carry on. Repeating every second would bury the
+      # console URL under the same line forever.
+      reported="${reported}|${names[$i]}|"
+      echo
+      echo "  ${names[$i]} stopped — the console keeps running without it."
+      awk '/^libc\+\+abi|^SIGABRT|^goroutine |^\[signal /{exit} {print}' \
+        "${logs[$i]}" 2>/dev/null | grep -v '^$' | tail -3 | sed 's/^/    /'
+      echo
     fi
     i=$((i + 1))
   done

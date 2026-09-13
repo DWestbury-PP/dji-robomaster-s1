@@ -57,7 +57,7 @@ var (
 	// vehicle must be a second process (DECISIONS.md #9). Setting -workers turns
 	// this process into the supervisor for those worker processes; it then holds
 	// no bridge of its own.
-	workers  = flag.String("workers", "", "Comma-separated worker addresses (e.g. 127.0.0.1:8801,127.0.0.1:8802). Setting this runs as the supervisor: no robot of its own, a dropdown over the workers listed.")
+	workers  = flag.String("workers", "", "Comma-separated workers, each `addr` or `Name=addr` (e.g. Rover=127.0.0.1:8801,Scout=127.0.0.1:8802). Setting this runs as the supervisor: no robot of its own, a dropdown over the workers listed. The name form labels a vehicle that never comes up.")
 	nameFlag = flag.String("name", "", "Display name for the vehicle this worker drives. Shown in the supervisor's dropdown.")
 
 	ledExp = flag.Bool("led-experiment", false, "Expose POST /led/raw, which sends an arbitrary JSON payload to the LED key. For identifying the wire format only: a malformed payload aborts this process from inside DJI's library, and Go cannot recover from it.")

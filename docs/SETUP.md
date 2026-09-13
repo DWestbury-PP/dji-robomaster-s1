@@ -298,6 +298,17 @@ Start the workers **staggered**. Discovery binds a single UDP port and only one
 process can hold it at a time; they recover, but sequential startup keeps it
 quiet.
 
+### A vehicle that is switched off does not stop the rest
+
+Only the console is treated as fatal. A vehicle worker that cannot reach its
+robot reports once and the stack carries on — the dropdown shows it as
+`Bravo (down)` and you drive whichever robots are actually charged. Requiring
+all of them would mean one flat battery costs you the whole session.
+
+That is also why `-workers` takes `Name=addr` pairs: the supervisor asks each
+worker who it is, so a worker that never came up would otherwise appear under a
+bare IP and port.
+
 ### If a vehicle will not reconnect
 
 A worker that exited uncleanly leaves the robot refusing new connections for
