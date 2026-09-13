@@ -82,13 +82,19 @@ while a local vision model narrates what it sees and every drive is recorded.
 | Detector | yolo11n on MPS, 7–17 ms a frame — drawn and logged, never actuating |
 | Recording | every drive, on by default — `logs/drives/<timestamp>/` |
 | Vehicles | one process each, switchable from the console — per browser tab |
-| Tests | **49** (61 with subtests), race-clean |
+| Tests | **55** (67 with subtests), race-clean |
 
-M4 is done: the perception tiers pull frames over HTTP and post observations
-back, with no broker and no shared filesystem (DECISIONS.md #14). Next is M4.5,
-an advisory looming highlight in the console — wired to nothing, so that the
-heuristic can be calibrated against real driving before anything is allowed to
-act on it.
+M5 is done: **two robots driven from one console**, switchable from a dropdown,
+one process each because DJI's bridge handle is process-wide (DECISIONS.md #21).
+Selection is per browser tab, so two tabs can drive two vehicles at once, and
+e-stop is fleet-wide — whoever presses it stops everything.
+
+Next is M4.5, an advisory looming highlight in the console — wired to nothing,
+so the heuristic can be calibrated against real driving before anything is
+allowed to act on it. What the robot *cannot* tell us is written down too: it
+has no distance sensor and cannot take DJI's, and its LEDs have so far refused
+to be driven remotely. Both are in
+[docs/EXPLORATIONS.md](docs/EXPLORATIONS.md), with the evidence.
 
 See [docs/STATUS.md](docs/STATUS.md) for where things stand,
 [docs/SETUP.md](docs/SETUP.md) for the environment, and

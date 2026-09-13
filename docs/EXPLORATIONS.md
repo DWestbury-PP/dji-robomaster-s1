@@ -34,6 +34,12 @@ Most ideas below live or die on this table, so it comes first. From the
 | `KeyGimbalAttitude` — where the turret points | **available and decoded** |
 | `KeyRobomasterMainControllerRelativePosition` | readable, **value type undecoded** — raw bytes |
 | `KeyVision*` — the S1's native marker, tracking and detection results | present, **all undecoded** |
+| `KeyRobomasterTOF*` — the distance-sensor subsystem | present in firmware, **answers `-1` unsupported** |
+
+A note on reading that last row, because it is the difference between "try
+harder" and "stop": an *unsupported* key and an *empty* one look nothing alike.
+Unsupported answers `Error: 0xFFFFFFFF` with no value; a supported key answers
+`Error: 0` even when it has nothing to report. `cmd/s1tof` asks, safely.
 
 Two consequences worth internalising before planning anything:
 
@@ -103,6 +109,47 @@ detector does not unlock triggers; a depth sensor or a calibrated ground plane
 would"* — with **"a depth sensor is added"** written down as a revisit
 condition. So this is not a garnish; it is the named trigger for revisiting the
 most consequential decision in the repo.
+
+### Answered first: the S1 has no distance sensor, and cannot take DJI's
+
+The firmware carries a complete time-of-flight subsystem — `TOFConnection`,
+`TOFOnlineModules`, `TOFInfoSubscribe`, `EnableTOFInfoSubscribe`, and **four**
+`TOFFirmwareVersion` keys, behind `RMTOFParamInfoSubscribeMsg`. That is DJI's
+distance-sensor accessory from the RoboMaster EP line, and it looked like a far
+better answer than a bolt-on pod: readings over the bridge we already speak, on
+the robot's own power, with no extra Wi-Fi client competing with the video.
+
+**The robot says no.** Asked directly, every TOF key answers
+`Error: 0xFFFFFFFF` with an empty value:
+
+| key | result |
+|---|---|
+| `KeyRobomasterTOFConnection` | `-1`, empty |
+| `KeyRobomasterTOFOnlineModules` | `-1`, empty |
+| `KeyRobomasterTOFFirmwareVersion1` | `-1`, empty |
+| `KeyRobomasterTOFFirmwareVersion2` | `-1`, empty |
+
+That is *unsupported*, not *nothing attached*. Other keys in the same session
+answered `Error: 0` with real values — gimbal attitude, battery percentage — so
+the robot distinguishes the two clearly. The S1 does not implement the
+subsystem, and no accessory will change that.
+
+So the pod described above stands as the way to get depth. Nothing was spent
+finding this out.
+
+**`cmd/s1tof` is the probe**, and the technique generalises to any undecoded
+key. Reading one is not free: the reply is dispatched through
+`result.NewFromJSON`, which calls `key.ResultValue()` — and that panics for a
+key with no decoded type. Two things make it safe:
+
+  - **Pass a nil callback.** In `notifyCallbacks` the decode sits inside
+    `if c != nil`, so a nil callback means the reply is never decoded.
+  - **Read the answer from the trace log.** `eventCallback` traces the raw
+    bytes before dispatching, at `LevelTrace` — which is *below* Debug, so
+    `-v` is not low enough.
+
+`AddEventTypeListener` looks like the obvious raw path and is not: `eventCallback`
+returns early for `TypeGetValue`, with a `TODO` upstream acknowledging it.
 
 ### The architecture that seems right
 
@@ -199,60 +246,29 @@ the binary rather than discovered one crash at a time.
 feature, and one that can abort the vehicle process should not be reachable by
 default.
 
-### Answered: the S1 has no distance sensor, and cannot take DJI's
+## What the S1's own vision reports — unprobed, and now cheap to ask
 
-The firmware carries a complete time-of-flight subsystem — `TOFConnection`,
-`TOFOnlineModules`, `TOFInfoSubscribe`, `EnableTOFInfoSubscribe`, and **four**
-`TOFFirmwareVersion` keys, behind `RMTOFParamInfoSubscribeMsg`. That is DJI's
-distance-sensor accessory from the RoboMaster EP line, and it looked like a far
-better answer than a bolt-on pod: readings over the bridge we already speak, on
-the robot's own power, with no extra Wi-Fi client competing with the video.
-
-**The robot says no.** Asked directly, every TOF key answers
-`Error: 0xFFFFFFFF` with an empty value:
-
-| key | result |
-|---|---|
-| `KeyRobomasterTOFConnection` | `-1`, empty |
-| `KeyRobomasterTOFOnlineModules` | `-1`, empty |
-| `KeyRobomasterTOFFirmwareVersion1` | `-1`, empty |
-| `KeyRobomasterTOFFirmwareVersion2` | `-1`, empty |
-
-That is *unsupported*, not *nothing attached*. Other keys in the same session
-answered `Error: 0` with real values — gimbal attitude, battery percentage — so
-the robot distinguishes the two clearly. The S1 does not implement the
-subsystem, and no accessory will change that.
-
-So the pod described above stands as the way to get depth. Nothing was spent
-finding this out.
-
-**`cmd/s1tof` is the probe**, and the technique generalises to any undecoded
-key. Reading one is not free: the reply is dispatched through
-`result.NewFromJSON`, which calls `key.ResultValue()` — and that panics for a
-key with no decoded type. Two things make it safe:
-
-  - **Pass a nil callback.** In `notifyCallbacks` the decode sits inside
-    `if c != nil`, so a nil callback means the reply is never decoded.
-  - **Read the answer from the trace log.** `eventCallback` traces the raw
-    bytes before dispatching, at `LevelTrace` — which is *below* Debug, so
-    `-v` is not low enough.
-
-`AddEventTypeListener` looks like the obvious raw path and is not: `eventCallback`
-returns early for `TypeGetValue`, with a `TODO` upstream acknowledging it.
-
-## A bonus find: the vision schema
-
-Hunting for LED fields turned up the neighbouring block, which appears to be the
-S1's own vision output:
+Hunting for LED fields turned up a neighbouring block that looks like the
+onboard detector's output:
 
 ```
 Rects · RectX · RectY · RectW · RectH · Color · Distance · Pitch · Yaw · Roll
 ```
 
-`Distance` is the interesting word. If that is real and reachable, it bears
-directly on the depth question that DECISIONS.md #15 names as the blocker for
-automated movement triggers — possibly without any bolt-on sensor at all. The
-same binary-reading technique would apply. Nobody has tried.
+**`Distance` is the interesting word**, and it is also the one to be careful
+about. A field-name table carries no struct boundaries, so adjacency does not
+prove these belong to one message — the first `Distance` in the binary turned
+out to be part of `RMVisionParamTrackingDistance`, which is *write* access: a
+setting, not a reading. This is a lead, not a finding.
+
+If it is real and readable, it bears on the depth question DECISIONS.md #15
+names as the blocker for automated movement triggers, possibly with no bolt-on
+hardware at all. That is worth an hour of somebody's time.
+
+`cmd/s1tof` already knows how to ask: `KeyVisionDebugRect`,
+`KeyVisionDetectionEnable` and the running-status keys are all readable, and the
+probe reads undecoded keys without the decode that would otherwise panic. The
+keys are listed in the command; nobody has run it against them yet.
 
 ## Smaller threads
 
