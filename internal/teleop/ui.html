@@ -149,6 +149,28 @@
 </head>
 <body>
 
+<style>
+  /* The selector has to look like the other chips, not like a form control:
+     the HUD is meant to disappear into the video. */
+  #vehicleSel {
+    background: transparent; border: 0; color: inherit;
+    font: inherit; padding: 0 14px 0 0; margin: 0;
+    appearance: none; -webkit-appearance: none;
+    cursor: pointer; outline: none; max-width: 14ch;
+    text-overflow: ellipsis;
+  }
+  #chipVehicle { position: relative; }
+  #chipVehicle::after {
+    content: ""; position: absolute; right: 8px; top: 50%;
+    width: 0; height: 0; margin-top: -1px; pointer-events: none;
+    border-left: 3.5px solid transparent; border-right: 3.5px solid transparent;
+    border-top: 4px solid currentColor; opacity: .55;
+  }
+  /* Options render in the OS menu, which does not inherit the HUD palette. */
+  #vehicleSel option { color: #111; background: #fff; }
+  #vehicleSel.down { color: #ff6b6b; }
+</style>
+
 <div id="banner"></div>
 
 <div id="stage">
@@ -160,6 +182,9 @@
   <span class="chip"><span class="dot" id="vidDot"></span><b id="vidFps">—</b> fps</span>
   <span class="chip dim" id="chipRes">—</span>
   <span class="spacer"></span>
+  <span class="chip" id="chipVehicle" hidden>
+    <select id="vehicleSel" title="Which vehicle you are driving"></select>
+  </span>
   <span class="chip" id="chipGear">drive —</span>
   <span class="chip"><span class="meter"><i id="battBar" style="width:0%"></i></span><b id="battTxt">—</b></span>
   <span class="chip"><span class="dot" id="linkDot"></span><span id="linkTxt">—</span></span>
@@ -458,6 +483,7 @@
     $("bFire").disabled   = !t.armed;
     $("bArm").className   = "btn" + (t.armed ? " armed" : "");
 
+    renderVehicles(t.vehicles, t.vehicle);
     renderPerception(t.perception);
 
     if (t.estopped)             banner("estop", "E-STOP ACTIVE — CLEAR TO RESUME");
@@ -467,6 +493,15 @@
 
   // ---- perception ---------------------------------------------------------
   let perception = {}, lastCaption = "";
+
+  // clearOverlayState drops everything the previous vehicle told us. Boxes and
+  // a caption describing one robot's view, drawn over another robot's video,
+  // would be a confident lie — the failure mode this project keeps refusing.
+  function clearOverlayState() {
+    perception = {};
+    lastCaption = "";
+    renderPerception({});
+  }
   const BOX_FRESH = 150, BOX_STALE = 600;
 
   // ---- caption placement, visibility and resting --------------------------
@@ -667,15 +702,71 @@
     ctx.restore();
   }
 
+  // ---- vehicle selection --------------------------------------------------
+  // Selection is per browser tab. The supervisor routes this tab's commands to
+  // the chosen worker; a second tab can drive a different vehicle at the same
+  // time. Switching sends no stop — relaying simply ceases and that vehicle's
+  // own deadman zeroes it within 250 ms, the same path as a closed tab.
+  let selectedVehicle = null;      // id string, or null while single-vehicle
+  let knownVehicles = "";          // signature, to avoid rebuilding on every tick
+  let videoAbort = null;           // aborts the MJPEG read when we switch
+
+  function vehicleQuery() {
+    return selectedVehicle ? "?vehicle=" + encodeURIComponent(selectedVehicle) : "";
+  }
+
+  function renderVehicles(list, current) {
+    const sel = $("vehicleSel"), chip = $("chipVehicle");
+    if (!Array.isArray(list) || list.length === 0) { chip.hidden = true; return; }
+
+    // One vehicle needs no chooser; showing a dropdown of one is noise.
+    chip.hidden = list.length < 2;
+
+    const sig = list.map(v => v.id + ":" + v.name + ":" + (v.up ? 1 : 0)).join("|");
+    if (sig !== knownVehicles) {
+      knownVehicles = sig;
+      sel.innerHTML = "";
+      for (const v of list) {
+        const o = document.createElement("option");
+        o.value = v.id;
+        // A worker that is down is still listed, and says so: silently hiding
+        // it would make a powered-off robot look like one that never existed.
+        o.textContent = v.up ? v.name : v.name + " (down)";
+        sel.appendChild(o);
+      }
+    }
+    if (current && sel.value !== current) sel.value = current;
+
+    const active = list.find(v => v.id === (current || sel.value));
+    sel.classList.toggle("down", !!active && !active.up);
+  }
+
+  $("vehicleSel").addEventListener("change", () => {
+    const id = $("vehicleSel").value;
+    if (!id || id === selectedVehicle) return;
+    selectedVehicle = id;
+    send({ type: "select", vehicle: id });
+    restartVideo();
+    // Clear stale overlays immediately: boxes from the vehicle you just left
+    // drawn over the view of the one you just joined would be a lie.
+    clearOverlayState();
+  });
+
   // ---- video --------------------------------------------------------------
   // The MJPEG stream is parsed by hand rather than handed to <img src>, so the
   // browser can measure its own frame rate — the number our server-side budget
   // could never tell us.
   let frames = 0, fpsAt = performance.now();
 
+  function restartVideo() {
+    if (videoAbort) videoAbort.abort();
+  }
+
   async function streamVideo() {
+    const ac = new AbortController();
+    videoAbort = ac;
     try {
-      const res = await fetch("/stream", { cache:"no-store" });
+      const res = await fetch("/stream" + vehicleQuery(), { cache:"no-store", signal: ac.signal });
       const reader = res.body.getReader();
       let buf = new Uint8Array(0);
       for (;;) {
@@ -696,7 +787,10 @@
           buf = buf.subarray(start + len);
         }
       }
-    } catch { $("vidDot").className = "dot bad"; }
+    } catch (e) {
+      if (e && e.name === "AbortError") { setTimeout(streamVideo, 0); return; }
+      $("vidDot").className = "dot bad";
+    }
     setTimeout(streamVideo, 1000);
   }
 

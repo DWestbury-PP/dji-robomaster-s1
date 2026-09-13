@@ -22,7 +22,8 @@ what it sees.
 | Console | full-bleed cockpit, movable narration, drawer for everything else |
 | Observer | `gemma4:e4b` prose caption every 20 s, **1.6–3.7 s** per caption |
 | Detector | yolo11n on MPS, **7–17 ms** a frame, boxes drawn and logged |
-| Tests | 49 top-level (61 with subtests), race-clean |
+| Tests | 55 top-level (67 with subtests), race-clean |
+| Vehicles | one process each; console switches between them, per browser tab |
 | Recording | on by default — `logs/drives/<timestamp>/` |
 
 **Nothing a model produces actuates anything** (DECISIONS.md #15). Motion is
@@ -54,8 +55,9 @@ using the RoboMaster app.
 - The safety layer is now **written in Go**, still on the last hop (#6).
 - Go enters the stack, running as amd64 under Rosetta 2, with a documented exit
   to a Linux host if Rosetta goes away (#10).
-- Decision #8 (root one, keep one stock) is **superseded**. Vehicle 2 stays
-  pristine as the control and as the future Path C testbed.
+- Decision #8 (root one, keep one stock) is **superseded**. Both vehicles stay
+  stock. **Update 2026-09-13:** vehicle 2 is now on the house network too, so
+  it is a second drivable robot rather than a shelf control.
 - No H.264 parsing needed — the camera module delivers decoded RGB via callback.
 
 ## Roadmap
@@ -77,7 +79,8 @@ See ARCHITECTURE.md §7.
 | M4.3 — scene tier: `s1narrate` | ✅ **done — narrating live** |
 | M4.4 — the experience log | ✅ **done — recording every drive by default** |
 | M4.9 — hide boxes / narration | ✅ done |
-| M4.5 — advisory looming highlight | **next** |
+| M4.5 — advisory looming highlight | queued |
+| M5 — multi-vehicle: process per robot, switchable console | ✅ **done — two vehicles, one dropdown** |
 | M5 — mobile app | not started |
 | ~~intentions, autonomy~~ | **deferred** with conditions (DECISIONS.md #15) |
 
@@ -257,8 +260,11 @@ change for them.
    p99 tail 3× against direct mode (ARCHITECTURE.md §6). Dual-homing is gone —
    one network for Redis, Ollama and the robot. Router mode is now the default
    for both binaries; `-wifi-direct` opts back out.
-4. **Two vehicles at once.** The bridge handle is process-wide; whether a second
-   S1 can be driven from the same host is unknown.
+4. ~~**Two vehicles at once.**~~ **Answered 2026-09-13 — yes, one process each.**
+   The bridge singleton is real and now verified in the source, but it is
+   process-local: two processes each initialise their own bridge fine. The only
+   collision was our own discovery binding UDP `:45678`, which is a retry, not a
+   wall. Built and driven from one console (DECISIONS.md #21).
 5. **Path C camera.** If we ever replace the intelligent controller, does the FPV
    camera and Wi-Fi go with it? Assumed yes, unverified. Bench question.
 6. ~~**foveate M8.**~~ **Moot 2026-09-05.** It was the prerequisite only for the

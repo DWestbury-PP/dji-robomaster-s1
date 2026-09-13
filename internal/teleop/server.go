@@ -35,6 +35,14 @@ type Config struct {
 	Quality   int    // JPEG quality
 	StatusFn  func() Status
 	Log       *slog.Logger
+
+	// VehicleID and VehicleName identify which robot this process drives, for
+	// a supervisor multiplexing several. Operator-supplied rather than derived
+	// from the robot: the bridge does not hand us the MAC, and a name the
+	// operator chose reads better in a dropdown than a hardware address.
+	VehicleID   string
+	VehicleName string
+	AppID       uint64
 }
 
 // Server is the browser console. Commands arrive over the WebSocket and go
@@ -120,10 +128,34 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /frame.jpg", s.handleFrame)
 	mux.HandleFunc("POST /perception", s.handlePerception)
 	mux.HandleFunc("POST /perception/pending", s.handlePending)
+	mux.HandleFunc("GET /vehicle", s.handleVehicle)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
 	return mux
+}
+
+// handleVehicle answers "which robot are you holding?" for a supervisor. Safe
+// to call on a single-vehicle console too, where it simply describes itself.
+func (s *Server) handleVehicle(w http.ResponseWriter, r *http.Request) {
+	id, name := s.cfg.VehicleID, s.cfg.VehicleName
+	if id == "" {
+		id = s.cfg.Addr
+	}
+	if name == "" {
+		name = id
+	}
+	var connected bool
+	if s.cfg.StatusFn != nil {
+		connected = s.cfg.StatusFn().Connected
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":        id,
+		"name":      name,
+		"appID":     s.cfg.AppID,
+		"connected": connected,
+	})
 }
 
 func (s *Server) handleUI(w http.ResponseWriter, r *http.Request) {

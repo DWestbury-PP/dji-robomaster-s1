@@ -536,3 +536,66 @@ Nothing bad happened, because detections actuate nothing (#15). Had they been
 wired to a reflex, the robot would have backed away from itself — the same
 failure the scene tier's prompt had to be written around, arriving by a
 different route.
+
+---
+
+### 21. A vehicle is a process; the console is a supervisor over them
+
+**Decision.** Each robot is driven by its own `s1teleop` process holding its own
+bridge, governor and control loop. A second `s1teleop`, started with `-workers`,
+holds no bridge at all: it serves the console and relays each browser session's
+commands to the worker that session has selected. Selection is per browser tab.
+
+**Why it is forced, not chosen.** The bridge is a process-wide singleton, and
+this is now verified rather than assumed. `wrapper.Get()` returns a package
+level `var UnityBridgeImpl`, the callback manager is a `sync.Once` singleton
+keyed by event code rather than by robot, and the `.dylib` is `dlopen`ed once in
+`init()`. Two clients in one process share all of it and their event listeners
+collide. STATUS.md open question #4 is answered: one process, one vehicle.
+
+**What actually blocked two vehicles, and what did not.** Running two real
+processes showed the DJI bridge initialising fine in both — `Video Decoder
+Initialized` on each. The collision was ours: `Finder` binding UDP `:45678` for
+discovery. The library sets `SO_REUSEADDR`, which is not sufficient on Darwin;
+a direct test confirms `SO_REUSEADDR` alone refuses the second bind while
+`SO_REUSEADDR|SO_REUSEPORT` accepts it. That one-line fix is worth sending
+upstream, but it is not needed here: `Find()` releases the socket on return, so
+staggering startup is enough, and a bind collision became a retry rather than a
+fatal error.
+
+**What the supervisor is not allowed to be.** It does not clamp, arm, or
+interpret commands — it relays them byte for byte. Every limit stays in the
+worker's governor, on the last hop before that vehicle's wire, exactly where #6
+put it. A supervisor that started making safety decisions would be a new
+unbypassable hop, and there is only supposed to be one.
+
+**Switching sends no stop, deliberately.** Relaying to the vehicle you left
+simply ceases, and its own deadman zeroes it within 250 ms — the same path as a
+closed tab, a crashed browser or a Wi-Fi drop. That path is already built,
+already tested, and now exercised every time anyone changes the dropdown. A test
+pins this so that a later "helpful" explicit stop has to be justified.
+
+**E-stop is fleet-wide.** Any operator's e-stop halts every vehicle, not just
+their own. In a multi-vehicle session the person who can see the collision
+coming is frequently not the one holding that vehicle's controls, and a safety
+control that only reaches your own robot is not a safety control.
+
+**The subtle part.** The fleet latches the e-stop, and re-asserts it whenever a
+worker reconnects. Without that, a worker that dropped and came back during a
+stop would return with a fresh governor, willing to accept commands — the stop
+would appear to hold while quietly having lapsed for that one vehicle.
+
+**What this costs.** One process per vehicle: ~0.25 cores of Rosetta video
+decode each, and a second thing to start. `start.sh` takes `S1_VEHICLES` and
+handles it.
+
+**The sharp edge.** Worker-to-robot assignment is by app ID. With app ID 0 each
+worker takes whichever robot answers discovery first, so names land on vehicles
+by coin toss. `start.sh` warns when more than one vehicle is configured without
+one. App IDs can be set without the DJI app at all — `support/qrcode` generates
+the pairing code the robot reads with its own camera, which also keeps the
+staged 00.06.0521 firmware out of the loop.
+
+**Revisit if.** A native arm64 bridge appears (the singleton constraint is
+DJI's, not Go's), or vehicles move to separate hosts, at which point the
+supervisor is already speaking the right protocol over the network.

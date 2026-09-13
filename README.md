@@ -81,6 +81,7 @@ while a local vision model narrates what it sees and every drive is recorded.
 | Observer | `gemma4:e4b` narrating in prose every 20 s, 1.6–3.7 s per caption |
 | Detector | yolo11n on MPS, 7–17 ms a frame — drawn and logged, never actuating |
 | Recording | every drive, on by default — `logs/drives/<timestamp>/` |
+| Vehicles | one process each, switchable from the console — per browser tab |
 | Tests | **49** (61 with subtests), race-clean |
 
 M4 is done: the perception tiers pull frames over HTTP and post observations
@@ -108,6 +109,10 @@ Per-process output lands in `logs/run/`.
 ```bash
 ./scripts/start.sh -mock   # no robot: synthetic video, a sink that discards
 ./bin/s1find               # is the robot on the network?
+
+# Two robots, switchable from a dropdown in the console. Each gets its own
+# process, because DJI's bridge handle is process-wide (DECISIONS.md #21).
+S1_VEHICLES="Rover:123,Scout:456" ./scripts/start.sh
 ```
 
 Anything passed to `start.sh` goes to `s1teleop`, so `-wifi-direct`,
@@ -128,6 +133,7 @@ cd perception/detector && uv run detect.py -v   # the detector
 | [docs/SETUP.md](docs/SETUP.md) | **The working setup** — machines, network, toolchain, and the traps |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Services, command model, safety rules, measured latency budget |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Every non-obvious choice, with rationale and revisit triggers |
+| [docs/EXPLORATIONS.md](docs/EXPLORATIONS.md) | Ideas nobody has built — what's known, what it would cost, what to fork |
 | [docs/HARDWARE.md](docs/HARDWARE.md) | The three transport paths and the firmware situation |
 | [docs/M1.md](docs/M1.md) | The latency milestone: what was measured, and what cannot be |
 | [docs/M1-RUNBOOK.md](docs/M1-RUNBOOK.md) | Offline field card for working with the robot |
