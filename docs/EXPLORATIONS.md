@@ -199,6 +199,47 @@ the binary rather than discovered one crash at a time.
 feature, and one that can abort the vehicle process should not be reachable by
 default.
 
+### Answered: the S1 has no distance sensor, and cannot take DJI's
+
+The firmware carries a complete time-of-flight subsystem — `TOFConnection`,
+`TOFOnlineModules`, `TOFInfoSubscribe`, `EnableTOFInfoSubscribe`, and **four**
+`TOFFirmwareVersion` keys, behind `RMTOFParamInfoSubscribeMsg`. That is DJI's
+distance-sensor accessory from the RoboMaster EP line, and it looked like a far
+better answer than a bolt-on pod: readings over the bridge we already speak, on
+the robot's own power, with no extra Wi-Fi client competing with the video.
+
+**The robot says no.** Asked directly, every TOF key answers
+`Error: 0xFFFFFFFF` with an empty value:
+
+| key | result |
+|---|---|
+| `KeyRobomasterTOFConnection` | `-1`, empty |
+| `KeyRobomasterTOFOnlineModules` | `-1`, empty |
+| `KeyRobomasterTOFFirmwareVersion1` | `-1`, empty |
+| `KeyRobomasterTOFFirmwareVersion2` | `-1`, empty |
+
+That is *unsupported*, not *nothing attached*. Other keys in the same session
+answered `Error: 0` with real values — gimbal attitude, battery percentage — so
+the robot distinguishes the two clearly. The S1 does not implement the
+subsystem, and no accessory will change that.
+
+So the pod described above stands as the way to get depth. Nothing was spent
+finding this out.
+
+**`cmd/s1tof` is the probe**, and the technique generalises to any undecoded
+key. Reading one is not free: the reply is dispatched through
+`result.NewFromJSON`, which calls `key.ResultValue()` — and that panics for a
+key with no decoded type. Two things make it safe:
+
+  - **Pass a nil callback.** In `notifyCallbacks` the decode sits inside
+    `if c != nil`, so a nil callback means the reply is never decoded.
+  - **Read the answer from the trace log.** `eventCallback` traces the raw
+    bytes before dispatching, at `LevelTrace` — which is *below* Debug, so
+    `-v` is not low enough.
+
+`AddEventTypeListener` looks like the obvious raw path and is not: `eventCallback`
+returns early for `TypeGetValue`, with a `TODO` upstream acknowledging it.
+
 ## A bonus find: the vision schema
 
 Hunting for LED fields turned up the neighbouring block, which appears to be the
