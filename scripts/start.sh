@@ -128,6 +128,10 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
+# Which address each vehicle's perception tiers should watch. Declared here so
+# the single-vehicle path below leaves it defined but empty.
+tier_targets=()
+
 # One vehicle is one process. Several vehicles are several processes plus a
 # supervisor, because the DJI bridge handle is process-wide (DECISIONS.md #9).
 if [[ -n "${S1_VEHICLES:-}" ]]; then
@@ -150,6 +154,11 @@ if [[ -n "${S1_VEHICLES:-}" ]]; then
     track $! "$vname" "$vlog"
 
     worker_addrs="${worker_addrs:+$worker_addrs,}127.0.0.1:$port"
+    # Perception is per-vehicle, so each vehicle needs its own tiers. Pointing
+    # them all at the supervisor does not work: with no ?vehicle= it resolves to
+    # whichever vehicle is up first, so one robot gets watched and the other
+    # shows no boxes and no captions at all.
+    tier_targets+=("${vname}=127.0.0.1:$port")
     port=$((port + 1))
 
     # Discovery binds one UDP port, so two workers searching at once collide.
@@ -176,20 +185,35 @@ fi
 
 # The console owns the frames; the other two poll it and will wait, so
 # ordering does not matter beyond keeping the startup output readable.
-if [[ $have_narrator -eq 1 ]]; then
-  echo "s1narrate  → $RUNLOG/narrate.log"
-  ./bin/s1narrate -v >"$RUNLOG/narrate.log" 2>&1 &
-  track $! "s1narrate" "$RUNLOG/narrate.log"
+# One tier pair per vehicle, each pointed straight at that vehicle's worker.
+# With a single vehicle this is the console itself, which is the old behaviour.
+if [[ ${#tier_targets[@]} -eq 0 ]]; then
+  tier_targets=("=localhost:8700")
 fi
 
-if [[ $have_detector -eq 1 ]]; then
-  echo "detector   → $RUNLOG/detect.log"
-  ( cd perception/detector && uv run detect.py -v ) >"$RUNLOG/detect.log" 2>&1 &
-  track $! "detector" "$RUNLOG/detect.log"
-  # Ours to kill, but not ours to have announced: without this bash prints a
-  # "Terminated" job notice into the middle of the failure report.
-  disown %% 2>/dev/null || true
-fi
+for target in ${tier_targets[@]+"${tier_targets[@]}"}; do
+  vname="${target%%=*}"
+  vaddr="${target#*=}"
+  suffix="${vname:+-$vname}"
+
+  if [[ $have_narrator -eq 1 ]]; then
+    nlog="$RUNLOG/narrate${suffix}.log"
+    printf '%-10s → %s\n' "narrate${suffix}" "$nlog"
+    ./bin/s1narrate -v -console "http://$vaddr" >"$nlog" 2>&1 &
+    track $! "s1narrate${suffix}" "$nlog"
+  fi
+
+  if [[ $have_detector -eq 1 ]]; then
+    dlog="$RUNLOG/detect${suffix}.log"
+    printf '%-10s → %s\n' "detect${suffix}" "$dlog"
+    ( cd perception/detector && uv run detect.py -v --console "http://$vaddr" ) >"$dlog" 2>&1 &
+    track $! "detector${suffix}" "$dlog"
+    # Ours to kill, but not ours to have announced: without this bash prints a
+    # "Terminated" job notice into the middle of the failure report.
+    disown %% 2>/dev/null || true
+  fi
+done
+
 
 echo
 echo "console: $CONSOLE     (Ctrl-C stops everything)"

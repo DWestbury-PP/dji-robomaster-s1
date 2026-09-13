@@ -251,6 +251,17 @@ Workers land on `127.0.0.1:8801`, `:8802`, … and the console stays on `:8700`.
 Selection is per browser tab, so two tabs can drive two vehicles at once.
 **E-stop is fleet-wide** — whoever presses it stops every vehicle.
 
+**Each vehicle gets its own detector and narrator**, pointed straight at its
+worker. That is not an optimisation, it is required: perception is stored
+per-vehicle, and a tier pointed at the supervisor with no `?vehicle=` resolves
+to whichever vehicle came up first — so one robot would get boxes and captions
+while the other showed none at all. Logs land in `logs/run/detect-<name>.log`
+and `narrate-<name>.log`.
+
+Two vehicles' worth of perception measured ~7% of a core per detector and about
+570 MB each for the model, with per-frame detection rising from 7–17 ms to
+~24 ms under MPS contention. Narrators are idle between calls.
+
 ### The gotcha: vehicles paired by the same app share an app ID
 
 Worker-to-robot assignment is by app ID. Two S1s paired with the same phone

@@ -329,6 +329,17 @@ discovery, so retrying on the same client reports "unity bridge already started"
 instead of the real problem. Found because a stray `s1find` of mine was holding
 the port.
 
+**Session 8 (2026-09-13, evening).** Fixed a gap the operator caught while
+testing: with two vehicles, boxes and captions appeared on one robot and not the
+other. Two causes. The tiers were not running at all — the live two-vehicle test
+started workers and the supervisor by hand and never launched them. And
+underneath that, a real omission from the supervisor work: perception is stored
+per-vehicle, but a tier pointed at the supervisor with no `?vehicle=` resolves to
+whichever vehicle is up first, so a single detector and narrator could only ever
+watch one robot. `start.sh` now starts a tier pair per vehicle, each aimed at its
+own worker. Verified by reading perception back through the supervisor for both
+vehicles rather than by assuming the fix worked.
+
 **Session 5 (2026-09-05, evening).** Built the fast tier (Python/YOLO, 7–17 ms),
 the experience log (on by default, recording both requested and applied
 control), and overlay toggles for boxes and narration. Audited and published the
