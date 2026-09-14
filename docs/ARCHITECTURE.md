@@ -46,7 +46,9 @@ transport exists to remove. **Slow tiers must pull** (DECISIONS.md #14).
 
 ## 3. Services
 
-Three processes: two Go, one Python. `scripts/start.sh` runs all three.
+Three processes: two Go, one Python. `scripts/start.sh` runs all three, and
+`scripts/stop.sh` stops them — both going through the same shutdown routine in
+`scripts/lib/proc.sh`, so the stack comes down the same way either way.
 
 **With more than one vehicle** there is one `s1teleop` per robot, plus one more
 running as a supervisor that holds no bridge. The supervisor serves the console

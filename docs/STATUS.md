@@ -191,6 +191,8 @@ live in `NOTICE`.
 ./bin/s1find                              # which robots are on the network?
 ./scripts/start.sh                        # one vehicle
 S1_VEHICLES="Alpha,Bravo" ./scripts/start.sh   # two, switchable in the console
+
+./scripts/stop.sh                         # take it all down again
 ```
 
 With `S1_VEHICLES` each robot gets its own worker process, its own detector and
@@ -206,6 +208,13 @@ if `uv` is missing, and refuses to start if something is already listening on
 :8700 — a second console fails to bind and dies while the browser still answers
 from the first, which looks healthy and is not. Arguments pass through to
 `s1teleop`, so `./scripts/start.sh -mock` needs no robot.
+
+Ctrl-C in that terminal stops everything properly. `./scripts/stop.sh` does the
+same job from anywhere, which is what you want when the terminal that started
+the stack is gone — it finds the processes by checkout rather than by name, so
+it will not reach into another clone, and `-n` lists them without signalling.
+It also names whatever else is sitting on :8700 when the thing blocking you is
+not ours to kill.
 
 To work on one process, start them by hand instead:
 

@@ -105,12 +105,18 @@ See [docs/STATUS.md](docs/STATUS.md) for where things stand,
 ```bash
 ./scripts/install-bridge.sh && ./scripts/build.sh   # once
 ./scripts/start.sh                                  # console at :8700
+./scripts/stop.sh                                   # ...and back down
 ```
 
 `start.sh` brings up all three processes — console, observer, detector — and
 Ctrl-C stops them together. It skips the observer if Ollama is not answering and
 the detector if `uv` is missing, because the console alone is worth running.
 Per-process output lands in `logs/run/`.
+
+`stop.sh` is for when there is no terminal left to Ctrl-C: a stack started from
+a window you have since closed, or one left running overnight. It stops only
+processes running from this checkout, so a second clone is never touched, and
+`-n` shows what it would stop without signalling anything.
 
 ```bash
 ./scripts/start.sh -mock   # no robot: synthetic video, a sink that discards
@@ -177,7 +183,7 @@ repository.** `scripts/install-bridge.sh` copies it out of the
 ## Status and scope
 
 A working, well-instrumented toy — not a product. It drives one specific robot
-on one specific desk, and the parts that matter are written down: 20 numbered
+on one specific desk, and the parts that matter are written down: 21 numbered
 decisions with the evidence behind them and the conditions that would reverse
 them. Several exist because something surprising happened on a real floor.
 

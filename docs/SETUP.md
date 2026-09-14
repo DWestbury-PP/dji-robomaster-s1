@@ -353,6 +353,9 @@ for the observer.
 # two vehicles, switchable from a dropdown in the console
 S1_VEHICLES="Rover:<appID>,Scout:<appID>" ./scripts/start.sh
 
+# stop everything this checkout started, from any terminal (-n to preview)
+./scripts/stop.sh
+
 # tests. CGO_ENABLED=1 GOARCH=amd64 is not optional: without it the bridge's
 # build constraints exclude every implementation file and cmd/s1teleop fails to
 # load with "build constraints exclude all Go files", which reads like a broken
