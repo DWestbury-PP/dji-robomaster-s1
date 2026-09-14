@@ -19,10 +19,17 @@
 # whichever robot answers its discovery first, so which name lands on which
 # robot is a coin toss.
 #
-# Ctrl-C stops everything. Anything passed here goes to the vehicle worker(s).
+# Ctrl-C stops everything. If the terminal that started it is gone, or a stack
+# was left behind by something less graceful, ./scripts/stop.sh does the same
+# job from anywhere. Anything passed here goes to the vehicle worker(s).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# alive(), kill_tree() and stop_pids(). Shared with stop.sh so that Ctrl-C
+# here and `./scripts/stop.sh` from another terminal take the stack down by
+# exactly the same route.
+source scripts/lib/proc.sh
 
 # The banner must name the port actually in use: -addr is passed straight
 # through to s1teleop, and a URL that lies is worse than no URL.
@@ -44,7 +51,7 @@ mkdir -p "$RUNLOG"
 # the stack looks healthy while half of it is not the half you just started.
 if [[ "$*" != *-addr* ]] && lsof -ti :8700 -sTCP:LISTEN >/dev/null 2>&1; then
   echo "port 8700 is already listening — a console is running." >&2
-  echo "stop it first:  kill \$(lsof -ti :8700 -sTCP:LISTEN)" >&2
+  echo "stop it first:  ./scripts/stop.sh" >&2
   exit 1
 fi
 
@@ -55,15 +62,6 @@ have_narrator=1
 command -v uv >/dev/null || { echo "note: uv not found — skipping the detector (boxes)"; have_detector=0; }
 curl -sf --max-time 2 http://localhost:11434/api/tags >/dev/null 2>&1 \
   || { echo "note: Ollama not answering on :11434 — skipping the observer (captions)"; have_narrator=0; }
-
-# Liveness. Not `kill -0`: an exited child we have not reaped is a zombie, and
-# `kill -0` reports a zombie as alive — which is exactly the death we care about.
-alive() {
-  case "$(ps -o state= -p "$1" 2>/dev/null)" in
-    ''|Z*) return 1 ;;
-    *)     return 0 ;;
-  esac
-}
 
 pids=()
 names=()
@@ -79,40 +77,18 @@ died=""
 # the console already renders — the dropdown shows it as "(down)" — and taking
 # the whole stack down because one robot's battery is flat means you cannot
 # drive the robot that *is* charged.
+# Ours to kill, but not ours to have announced: without the disown, bash
+# prints a "Terminated: 15" job notice for every process as it goes, straight
+# through the shutdown summary or the failure report. We track liveness with
+# ps, not the jobs table, so dropping them from it costs nothing.
 track() {
   pids+=("$1"); names+=("$2"); logs+=("$3"); fatal+=("${4:-yes}")
-}
-
-# Kill a child and anything it spawned. `uv run` execs the interpreter as a
-# grandchild, so killing the child alone leaves a detector holding the GPU and
-# polling a console that is gone.
-kill_tree() {
-  local pid=$1
-  pkill -TERM -P "$pid" 2>/dev/null || true
-  kill -TERM "$pid" 2>/dev/null || true
+  disown %% 2>/dev/null || true
 }
 
 cleanup() {
   trap - INT TERM EXIT
-  local pid
-  for pid in ${pids[@]+"${pids[@]}"}; do
-    kill_tree "$pid"
-  done
-  # Bounded, not a bare `wait`: a child that ignores TERM must not leave the
-  # operator with a terminal that will not come back.
-  local waited=0
-  while [[ $waited -lt 5 ]]; do
-    local live=0
-    for pid in ${pids[@]+"${pids[@]}"}; do
-      alive "$pid" && live=1
-    done
-    [[ $live -eq 0 ]] && break
-    sleep 1
-    waited=$((waited + 1))
-  done
-  for pid in ${pids[@]+"${pids[@]}"}; do
-    alive "$pid" && { pkill -KILL -P "$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null; } || true
-  done
+  stop_pids 5 ${pids[@]+"${pids[@]}"}
   echo
   if [[ -n "$died" ]]; then
     echo "$died stopped, so the rest were shut down. Its last words:"
@@ -218,9 +194,6 @@ for target in ${tier_targets[@]+"${tier_targets[@]}"}; do
     printf '%-10s → %s\n' "detect${suffix}" "$dlog"
     ( cd perception/detector && uv run detect.py -v --console "http://$vaddr" ) >"$dlog" 2>&1 &
     track $! "detector${suffix}" "$dlog" no
-    # Ours to kill, but not ours to have announced: without this bash prints a
-    # "Terminated" job notice into the middle of the failure report.
-    disown %% 2>/dev/null || true
   fi
 done
 
