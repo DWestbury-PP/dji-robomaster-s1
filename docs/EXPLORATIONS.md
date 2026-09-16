@@ -229,13 +229,36 @@ inheriting working, calibrated drivers instead of writing them.
 |---|---|
 | Distance ahead | ToF rangefinder — TF-Luna class (~8 m, UART) or VL53L1X (~4 m, I2C) |
 | Ground velocity without wheel slip | Optical flow — PMW3901 class |
-| **Both, one board, one UART** | **Matek 3901-L0X class** — flow + rangefinder, ~3 g, ~$25 |
+| **Both, one board, one UART** | **Matek 3901-L0X class** — flow + rangefinder, ~3 g, ~$25. *But see the ride-height problem below.* |
 | Absolute heading | GPS+compass combo module — wanted for the magnetometer, not the GNSS |
 | Where the *other* robot is | **nothing** — drones do not need robot-to-robot ranging. Still UWB. |
 
-A flow-plus-rangefinder board is the strongest single candidate here, because it
-answers two open questions with one part: depth ahead for DECISIONS.md #15, and
-slip-free velocity for Tier 2 above.
+A flow-plus-rangefinder board *looked* like the strongest single candidate.
+Measuring the robot changed that, and both halves of the original claim were
+wrong.
+
+**It does not give "depth ahead."** On a 3901-L0X the rangefinder points the
+same way as the flow sensor — straight down. Its job on an aircraft is to
+supply the height that scales the flow, not to look forward. Depth ahead still
+needs its own forward-facing sensor.
+
+**And the flow half cannot see the floor from this chassis.** A PMW3901 needs
+roughly **80 mm** of standoff to focus. The S1's measured ground clearance is
+**30 mm** (27 mm at the rear battery latch). That is not marginal — it is less
+than half the minimum, and no amount of software fixes it.
+
+**The near-field parts are the ones that fit.** Sensors like the **PAA5100JE**
+are built for roughly **10–35 mm**, which is the short-range counterpart of the
+same idea and lands squarely on this robot's ride height. That also puts the
+sensor where it most wants to be — directly under the centre of rotation, where
+spinning in place produces no apparent translation and no yaw compensation is
+needed. The trade is losing the bundled rangefinder, which at a fixed and now
+measured ride height was the redundant half anyway.
+
+*The general lesson, worth more than the part number:* the drone ecosystem's
+sensors assume aircraft standoffs. Before adopting one, check its minimum range
+against the thing you are bolting it to. That is a two-minute check on a
+datasheet and it invalidated the obvious choice here.
 
 **The shape that follows:**
 
