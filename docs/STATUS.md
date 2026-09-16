@@ -262,6 +262,37 @@ the driver, which is why both sides are kept.
 Detections join the same log when M4.2 lands; nothing about the format needs to
 change for them.
 
+## Resuming the mount work (2026-09-15)
+
+Four test blocks printed overnight on an X1C: `fit-coupon` (5 mm) plus `h15`,
+`h20`, `h25`. Regenerate any of them with `cad/s1_riser.py`; the reference robot
+rebuilds from `cad/s1_model.py`, so no `.blend` needs keeping.
+
+**Measure these first, in this order:**
+
+1. **Hex pocket across flats.** Model says **7.35 mm**. The difference is your
+   printer's hole deviation on this profile, and it applies to every part after
+   this. `X-Y hole compensation` was deliberately left at 0 so the coupon
+   measures the real error rather than a compensated one.
+2. **Does an M4 standoff press in without spinning?** Too loose → lower
+   `HEX_CLEAR`; won't seat → raise it.
+3. **Offer the coupon up to the chassis, gimbal off.** Do all four holes line
+   up, and does it drop into the recess or bridge it? The model cannot answer
+   this — the mesh is 51.5% open edges and the surface map around the mount is
+   noise.
+4. **Bore diameter** — `BORE_D = 46` is still an estimate from a photo.
+
+**Then these two constants stop being guesses**, and the one with teeth is
+`CHASSIS_THREAD = 5.0`: a standoff stud that bottoms out feels tight while
+clamping nothing, holding a gimbal.
+
+**Hardware still to order:** M4 male-female standoffs, 7 mm A/F, body length to
+match the chosen riser. Nothing assembles without them.
+
+**Design decision pending:** the plate's underside wants a generous relief
+pocket rather than a boss matched to the recess — it carries no load, so it only
+has to avoid fouling. Size it from what the coupon shows.
+
 ## Open questions
 
 1. ~~**Key discovery.**~~ **Closed 2026-09-04 — no longer needed.** The keys
@@ -319,6 +350,42 @@ change for them.
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 8 (2026-09-15).** A different kind of day: CAD rather than code. Drove
+Blender directly over the `blender-mcp` addon's socket on `127.0.0.1:9876` — no
+MCP server needed, the addon speaks JSON — and imported a free S1 model to design
+sensor mounts against.
+
+**Calibrating that model was the real work, and it paid for itself twice.** The
+mesh carries no real-world scale, so it was scaled on a measured 235 mm track
+width; ground clearance then landed at 29.9 mm against a measured 30.0, and a
+rear protrusion at 27.8 mm against a measured 27.0 where the battery latch is —
+two independent checks the calibration never saw. The X axis does **not** pass:
+297.7 mm against a measured 315. Trust this model in Y and Z, never fore-aft.
+
+**Three findings changed the hardware plan.** Ground clearance is 30 mm, which
+rules out a PMW3901 (80 mm minimum focus) under the chassis and sends the whole
+optical-flow idea to near-field parts — EXPLORATIONS.md is corrected. The gimbal
+mounts on **4× M4-B** (DJI's own assembly guide, step 59) at a measured 58 × 77
+on centre. And its keep-out is a stepped cylinder: only 63 mm radius below
+140 mm, but ~137 mm between 180–220 mm where the turret swings.
+
+**The riser went through three fastening schemes before one survived.** Long
+screws die on DJI's 1 mm head — far below any catalogue low head, so not a
+purchasable part. Counterbore-plus-insert dies because both fastener sets share
+the 58 × 77 centres and want the same space. Male-female standoffs work: the
+stud goes where DJI's screw went, the original M4×8 goes back on top, and the
+printed plate is captured but carries no clamp load — deliberately, since
+plastic creeping under preload would surface as camera shake, and video
+stability is a number this project tracks.
+
+**Two corrections worth keeping.** A hand-tuned box for measuring ground
+clearance clipped a wheel well and reported 14.5 mm when rebuilt from scratch;
+the earlier 30.2 mm was right only because the centre happened to sit clear.
+Excluding whole objects that touch the floor is the robust form. And a preview
+that lifted the gimbal by `location.z += 0.025` moved it 1.1 mm, not 25 —
+`location` is parent-relative and `S1_root` carries a 111× calibration scale.
+Both were caught by checking numbers rather than looking at renders.
 
 **Session 7 (2026-09-13, afternoon).** Two vehicles, one console. Answered open
 question #4 from the source rather than by assumption: the bridge singleton is
