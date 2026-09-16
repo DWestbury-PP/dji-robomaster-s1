@@ -50,12 +50,41 @@ MARGIN         = 9.0
 OUT = os.path.expanduser(
     "~/Documents/Source Code/dji-robomaster-s1/3D-models/print")
 
-VARIANTS = [
-    dict(name="coupon", riser_h=5.0,  collar_h=0.0),   # pattern check, ~10 min
-    dict(name="h15",    riser_h=15.0, collar_h=4.0),
-    dict(name="h20",    riser_h=20.0, collar_h=4.0),
-    dict(name="h25",    riser_h=25.0, collar_h=4.0),
-]
+# --- design stages -----------------------------------------------------------
+# Each stage is a complete parameter set, so "go back to the 15 mm one" is an
+# edit to BUILD rather than an archived binary somebody has to keep. Geometry
+# is cheap to regenerate; the decision behind it is not, so the note travels
+# with the numbers.
+STAGES = {
+    "fit-coupon": dict(riser_h=5.0, collar_h=0.0, note=(
+        "Bolt pattern and bore only, ~10 min to print. Checks the two things "
+        "most likely to be wrong - hole positions and bore clearance - before "
+        "committing to a tall print. Also the part to tune HEX_CLEAR on.")),
+    "h15": dict(riser_h=15.0, collar_h=4.0, note=(
+        "Least lift that still leaves usable volume. Shortest lever arm on the "
+        "standoffs, so the safest for gimbal stability.")),
+    "h20": dict(riser_h=20.0, collar_h=4.0, note="Middle of the range."),
+    "h25": dict(riser_h=25.0, collar_h=4.0, note=(
+        "Most sensor volume, most lever arm. Compare stability against h15 on "
+        "a hard stop before committing.")),
+}
+BUILD = ["fit-coupon", "h15", "h20", "h25"]
+
+# Fastening schemes tried and rejected. No geometry is kept - they failed on
+# interface grounds rather than dimensions - but the reasons are what stop them
+# being re-proposed six weeks from now.
+SUPERSEDED = {
+    "long-screw": (
+        "One long M4 per corner through the whole stack. Dead because DJI's "
+        "M4-B has a 1 mm head (measured: 9 mm overall, 8 mm shank). Catalogue "
+        "low heads start around 2.2 mm, so a long screw with that head is not "
+        "a purchasable part."),
+    "counterbore-insert": (
+        "Riser bolts down with its own screws counterbored inside it; gimbal "
+        "bolts up into heat-set inserts in its top face. Dead because both "
+        "fastener sets sit on the same 58 x 77 centres - the insert pocket and "
+        "the driver access for the lower screw want the same space."),
+}
 
 S = 0.001
 
@@ -124,14 +153,19 @@ def main():
     coll = _fresh("RISER_BUILD")
     print(f"bolt pattern {BOLT_X:.0f} x {BOLT_Y:.0f} mm, hex pocket "
           f"{STANDOFF_AF + HEX_CLEAR:.2f} mm A/F, bore {BORE_D:.0f} mm\n")
-    for v in VARIANTS:
-        o = build(coll, v["riser_h"], v["collar_h"], name=f"riser_{v['name']}")
-        path = os.path.join(OUT, f"s1-riser-{v['name']}.stl")
+    for key in BUILD:
+        v = STAGES[key]
+        o = build(coll, v["riser_h"], v["collar_h"], name=f"riser_{key}")
+        path = os.path.join(OUT, f"s1-riser-{key}.stl")
         n = export(o, path)
         wall = MARGIN - (STANDOFF_AF + HEX_CLEAR)/2
-        print(f"  {v['name']:<7} h={v['riser_h']:5.1f}  collar={v['collar_h']:4.1f}  "
+        print(f"  {key:<11} h={v['riser_h']:5.1f}  collar={v['collar_h']:4.1f}  "
               f"wall={wall:4.2f}  tris={len(o.data.polygons):4d}  {n/1024:6.1f} KB")
         o.hide_set(True)
-    print(f"\nwrote {len(VARIANTS)} STLs to {OUT}")
+    print(f"\nwrote {len(BUILD)} STLs to {OUT}")
+    if SUPERSEDED:
+        print("\nsuperseded schemes (reasons kept, geometry not):")
+        for k in SUPERSEDED:
+            print(f"  {k}")
 
 main()

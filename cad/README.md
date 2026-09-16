@@ -29,6 +29,31 @@ print(json.loads(s.recv(1 << 20))["result"]["result"])
 STLs land in `3D-models/print/` (gitignored, as is everything under
 `3D-models/`).
 
+## s1_model.py — the calibrated S1 reference
+
+Rebuilds the reference robot from the source FBX: strips the backdrop
+billboard the model ships with, aligns it to world axes, scales it on the
+measured 235 mm track width, and sits it on the floor at the origin.
+
+Idempotent — run it twice and you get one robot, not two.
+
+**This is why no `.blend` needs versioning.** The valuable content isn't the
+mesh, it's the calibration; with that in a script, any stage is a script run
+rather than a binary someone has to keep.
+
+It self-checks on rebuild against two measurements the calibration never saw:
+
+| | Model | Measured |
+|---|---|---|
+| Ground clearance | 29.89 mm | 30.0 |
+| Rear protrusion | 27.77 mm | 27.0 (battery latch) |
+| Length | 297.7 mm | 315.0 — **~5.5% short, do not trust X** |
+
+Measuring that clearance needs care: a box around the centre clips the edge of
+a wheel well and reports the wheel. An earlier hand-tuned box did exactly that
+and gave a right answer for the wrong reason. The script instead excludes whole
+objects that touch the floor, since the chassis underside cannot be one.
+
 ## s1_riser.py — gimbal riser
 
 Lifts the gimbal to make room for a sensor array, without modifying the robot.
@@ -78,7 +103,30 @@ capture is lost, too tight and it will not seat.
 PLA is adequate — the plate is not load-bearing. PETG or ASA if you want heat
 margin in a car or a sunny room.
 
-### Variants
+### Design stages
 
-`coupon` (5 mm) · `h15` · `h20` · `h25`. Heights include a 4 mm collar around
-the bore that keeps the gimbal loom off the printed edge.
+`STAGES` holds a complete parameter set per stage, and `BUILD` picks which to
+export. Reverting to an earlier idea is an edit to `BUILD`, not an archived
+binary — geometry is cheap to regenerate, the decision behind it is not, so a
+`note` travels with each set of numbers.
+
+| Stage | Height | For |
+|---|---|---|
+| `fit-coupon` | 5 mm | Pattern and bore only, ~10 min. Print this first. |
+| `h15` | 15 mm | Least lift that still leaves volume; shortest lever arm. |
+| `h20` | 20 mm | Middle. |
+| `h25` | 25 mm | Most volume, most lever arm. |
+
+Heights above the coupon include a 4 mm collar around the bore, keeping the
+gimbal loom off a printed edge.
+
+`SUPERSEDED` records fastening schemes that were tried and rejected. No
+geometry is kept — they failed on interface grounds, not dimensions — but the
+reasons are what stop them being re-proposed later:
+
+- **`long-screw`** — one long M4 per corner through the whole stack. DJI's
+  M4-B has a **1 mm head**; catalogue low heads start near 2.2 mm, so that
+  screw isn't a purchasable part.
+- **`counterbore-insert`** — riser bolts down with counterbored screws, gimbal
+  bolts up into heat-set inserts. Both sets share the 58 × 77 centres, so the
+  insert pocket and the lower screw's driver access want the same space.
