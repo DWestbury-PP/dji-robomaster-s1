@@ -9,6 +9,18 @@ bin/
 log/
 corpus/
 
+# Third-party 3D models, kept locally and never redistributed. Model licences —
+# free ones especially — routinely permit use but not redistribution, and this
+# repo is public, so committing one here would be publishing it. Same rule as
+# DJI's UnityBridge in NOTICE: use it on your own machine, do not ship it.
+3D-models/
+
+# DJI's own manuals and guides. Same reasoning as the models above and as the
+# UnityBridge in NOTICE: fine to keep a copy on your own machine, not ours to
+# republish. Everything we learn from them belongs in docs/ as our own words
+# and measurements.
+DJI-documents/
+
 # macOS and sync tools create byte-identical "name 2.ext" copies. Go compiles
 # any .go file in a package directory regardless of the name, so a stray copy
 # is a redeclaration error rather than a harmless duplicate.
