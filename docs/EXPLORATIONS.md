@@ -184,7 +184,23 @@ has no route to forward it to us (see the Sensor Adapter question above).
 This is the existing seam (#14, #20): another process with its own runtime and
 cadence, posting dated observations. Two constraints carry over — readings need
 **dating** like everything else (a microcontroller has no reliable clock), and
-the payload must stay **tiny**. Router mode measured **3.3 ms σ** jitter; that
+the payload must stay **tiny**.
+
+**Where the decision lives, once the pod exists.** The tempting shape is
+pod → hub → fast model → move, letting a classifier pick the next action from
+the ranges. We tested that on 2026-09-21 and it does not hold up
+(BAKEOFF-JEV.md, DECISIONS.md #22): the fastest model we could find is 319 ms
+median against a 250 ms deadman, loses to `if front < 400: turn toward
+max(left, right)`, and flips its answer at the threshold between identical
+runs. **The obstacle decision stays on the microcontroller, in arithmetic,
+with no network in the path** — which is also the only version that still
+works when the Wi-Fi does not. The pod should additionally discard any reading
+outside 40–4000 mm before publishing it; a garbage `99999` was the one input
+that made a model answer "forward" confidently.
+
+That leaves the pod doing what it is uniquely able to do — supplying real
+distances, which is the thing #15 names as the actual blocker — and leaves
+judgement to the tiers that read pixels and prose. Router mode measured **3.3 ms σ** jitter; that
 is a baseline to protect, and adding chatty 2.4 GHz clients alongside the video
 is exactly the sort of thing this project measures rather than assumes.
 

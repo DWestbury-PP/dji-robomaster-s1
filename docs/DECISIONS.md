@@ -417,6 +417,11 @@ different bake-off from the one we ran.
 **Revisit if.** Anything downstream starts consuming the caption as data. The
 moment a machine reads it, structure and its failure modes come back.
 
+**Partly answered 2026-09-21 by #22.** Something can now read it. The
+resolution is not that the narrator starts filling in forms again — it is that
+a second, different model reads its prose. This decision stands as written:
+the scene tier still narrates.
+
 ---
 
 ### 17. The console is a cockpit, not a dashboard
@@ -599,3 +604,74 @@ staged 00.06.0521 firmware out of the loop.
 **Revisit if.** A native arm64 bridge appears (the singleton constraint is
 DJI's, not Go's), or vehicles move to separate hosts, at which point the
 supervisor is already speaking the right protocol over the network.
+
+---
+
+### 22. A classifier reads the narrator; arithmetic drives the wheels
+
+**Decision.** TypeSafe's **Jev** is adopted as a candidate for one job only:
+turning the scene tier's prose into structured fields, off the critical path.
+It is **rejected for obstacle avoidance**, which stays arithmetic on the
+ESP32. Nothing here changes #15 — no model output actuates anything.
+
+**Why — measured, not assumed.** docs/BAKEOFF-JEV.md, on our own corpus.
+
+The appeal was latency: 319 ms median where every scene model we have runs
+1.6–3.7 s. That is the first number anyone has shown us in the right order of
+magnitude for a vehicle, and it was worth a day to test properly.
+
+It failed the job we imagined for it, for three independent reasons:
+
+1. **319 ms median, 363 ms p90, against a 250 ms deadman** — before the
+   ESP32's Wi-Fi hop. It cannot close a control loop it is slower than.
+2. **It loses to five lines of arithmetic** — 6–7 of 8 time-of-flight
+   snapshots against 8 of 8 for `if front < 400: turn toward max(left,
+   right)`. It still lost when handed the comparison already computed, in a
+   sentence naming the answer.
+3. **The boundary answer is not stable.** `front = 410` against a 400 mm
+   threshold returned `stop` in one run and `forward` in the next. The
+   threshold is the only place the decision is interesting.
+
+Then it won, decisively, at something else. On frame 0208 — where gemma4 wrote
+a correct obstruction caption and returned `clear_path: ahead` beside it — Jev
+read that same sentence and returned `clear_path: none` at 0.98. Seven of
+seven captions, with confidence collapsing to 0.23 on the one that is
+genuinely ambiguous.
+
+**The principle, which outlives this vendor.** The bake-off's original failure
+was asking one model to look *and* decide, and grammar-constrained decoding
+made it worse rather than better (#16). Splitting those across two models
+plays to what each is actually good at: **the VLM is good at looking and bad
+at deciding; a classifier is the reverse.** Any model with those properties
+would do; Jev is simply the first one fast and cheap enough to sit in the
+seam.
+
+**Why this does not creep toward autonomy.** #15's claim is that what blocks
+automated movement is *geometry, not detection quality*. A model that reads
+prose produces no distances. This makes the observer legible to machines; it
+does not make the vehicle self-driving, and the ToF array remains the whole
+unlock.
+
+**The sharp edges.**
+
+- **`confidence` is sharpness, not calibration.** It measures how concentrated
+  the probability distribution is. TypeSafe's own docs decline to claim
+  calibration and note it "reflects model certainty, not answer correctness."
+  Ours returned **0.91 on pure garbage**. It is a signal for *is this text
+  unambiguous*; it is not a safety interlock and must never gate an action.
+- **One confidently wrong `forward`.** A `front = 99999` reading — a plausible
+  sensor overflow — produced `forward`. Range validation belongs on the ESP32,
+  discarding anything outside 40–4000 mm before a model sees it.
+- **Options are scored independently**, so an option's description is a claim
+  to be matched, not a label. Our first wording of `stop` — "the situation is
+  unclear or unsafe" — matched every cluttered scene and halved the score.
+  This is a real maintenance hazard: the prompt is load-bearing and fails
+  silently.
+- **It is a hosted API on the critical path of nothing.** Keep it that way. If
+  it is unreachable the narration is still prose, the console still works, and
+  the vehicle is unaffected.
+
+**Revisit if.** Jev is put anywhere a failure would matter; a local model
+proves as good at prose-to-fields, which would remove the network entirely;
+or the ToF array lands and someone proposes putting a model between it and
+the wheels again, in which case re-read reason 2.
