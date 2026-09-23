@@ -287,7 +287,18 @@ rebuilds from `cad/s1_model.py`, so no `.blend` needs keeping.
 clamping nothing, holding a gimbal.
 
 **Hardware still to order:** M4 male-female standoffs, 7 mm A/F, body length to
-match the chosen riser. Nothing assembles without them.
+match the chosen riser. Nothing assembles without them. Plus 8 VL53L1X carriers
+and a TCA9548A — the mux has exactly 8 channels, and using it means the cheap
+carriers need no XSHUT pin broken out, which is the thing most likely to be
+missing from a budget board.
+
+**Sensor payload settled on geometry (2026-09-21).** Eight sensors at 45°
+spacing, two per face, each pocket splayed ±22.5°. Print `sensor-coupon`
+alongside the fit tests. Two findings drive it, both in cad/README.md: **h15
+cannot carry a wall-mounted sensor at all** (11 mm window against a 13 mm
+board, so h25 is the payload height), and **the 27° cone returns the floor at
+~490 mm** against a 400 mm stopping distance — a 90 mm margin that caps safe
+speed and is a constraint rather than a detail.
 
 **Design decision pending:** the plate's underside wants a generous relief
 pocket rather than a boss matched to the recess — it carries no load, so it only

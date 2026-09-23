@@ -26,6 +26,15 @@ PROVENANCE OF THE NUMBERS
                       validated against ground clearance to 0.8%
     BORE_D            ESTIMATE from a photo - not yet measured
     CHASSIS_THREAD    ESTIMATE - a stud that bottoms out holds nothing
+    SENSOR_*          UNVERIFIED - read off an AliExpress listing, not a
+                      datasheet and not calipers. Print sensor-coupon first.
+
+SENSOR COVERAGE
+    Two pockets per face, splayed +-SPLAY, give 8 beams at 45 deg spacing.
+    Boards sitting flat on a face would all aim the SAME way - that is
+    redundancy, not coverage - and chamfering the corners to make diagonal
+    faces is impossible here because the corners are where the standoffs are.
+    Angling the pockets is what buys the arc without touching the outline.
 """
 import bpy, math, os
 from mathutils import Vector
@@ -40,6 +49,17 @@ BORE_D         = 46.0
 CHASSIS_THREAD = 5.0
 # --- hardware -----------------------------------------------------------------
 STANDOFF_AF    = 7.0     # hex across flats
+# --- sensor payload: UNVERIFIED, from a listing rather than a datasheet -------
+# The 27 deg cone puts the floor at ~490 mm when aimed horizontally from this
+# height, which is only 90 mm beyond the 400 mm stopping distance. That margin
+# is what caps safe speed, so it is a design constraint and not a detail.
+SENSOR_W       = 20.0    # board width
+SENSOR_H       = 15.0    # board height - must clear the wall window
+SENSOR_T       = 4.0     # board plus tallest component
+SENSOR_FIT     = 0.30    # clearance per pocket; tune on sensor-coupon
+SPLAY          = 22.5    # half the 45 deg spacing
+RIB            = 3.0     # plastic between the pair
+WIRE_W, WIRE_H = 5.0, 3.0
 # --- print fit ----------------------------------------------------------------
 # X1C with a 0.4 mm nozzle puts vertical holes ~0.1-0.2 mm undersize. The hex
 # pocket is sized to CAPTURE the standoff so it cannot spin while the top screw
@@ -67,8 +87,21 @@ STAGES = {
     "h25": dict(riser_h=25.0, collar_h=4.0, note=(
         "Most sensor volume, most lever arm. Compare stability against h15 on "
         "a hard stop before committing.")),
+    "sensor-coupon": dict(riser_h=25.0, collar_h=0.0, coupon=True, note=(
+        "One face segment with a splayed pair of sensor pockets. Prints in "
+        "~15 min and settles SENSOR_FIT, the splay, and whether the centre "
+        "rib survives - none of which the full block tests cheaply.")),
+    "h25-sensors": dict(riser_h=25.0, collar_h=4.0, sensors=True, note=(
+        "The payload block: 8 pockets at 45 deg spacing, two per face. h25 "
+        "rather than h20 because a 15 mm board in h20's 16 mm window leaves "
+        "1 mm total, which is not a printable fit. Do not print this before "
+        "sensor-coupon has confirmed a board actually slides in.")),
 }
-BUILD = ["fit-coupon", "h15", "h20", "h25"]
+BUILD = ["fit-coupon", "sensor-coupon"]
+
+# h15 is kept in STAGES as a record, but it cannot carry wall-mounted sensors:
+# its 11 mm window is shorter than the shortest VL53L1X carrier sold. That is a
+# geometric fact, not a preference, and it is why the stack above starts at h20.
 
 # Fastening schemes tried and rejected. No geometry is kept - they failed on
 # interface grounds rather than dimensions - but the reasons are what stop them
@@ -105,11 +138,47 @@ def _cyl(coll, d, h, loc, name, verts=64):
     for c in list(o.users_collection): c.objects.unlink(o)
     coll.objects.link(o); return o
 
-def _box(coll, x, y, z, loc, name):
+def _box(coll, x, y, z, loc, name, rot_z=0.0):
     bpy.ops.mesh.primitive_cube_add(size=1, location=[v*S for v in loc])
     o = bpy.context.object; o.name = name; o.scale = (x*S, y*S, z*S)
+    if rot_z:
+        o.rotation_euler = (0.0, 0.0, math.radians(rot_z))
     for c in list(o.users_collection): c.objects.unlink(o)
     coll.objects.link(o); return o
+
+
+def sensor_cutters(coll, riser_h, faces=(0.0, 90.0, 180.0, 270.0)):
+    """Two splayed pockets per face, plus a wire slot behind each.
+
+    `faces` are outward normals in degrees CCW from +X. A pocket box is
+    centred ON the face plane so half of it lies outside the part: that
+    single box cuts the cavity and opens the optical window in one go.
+    """
+    px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
+    depth = SENSOR_T + SENSOR_FIT
+    proj  = SENSOR_W * math.cos(math.radians(SPLAY))
+    zc    = riser_h / 2
+    out   = []
+    for a in faces:
+        ar = math.radians(a)
+        n   = (math.cos(ar), math.sin(ar))
+        tan = (-math.sin(ar), math.cos(ar))
+        half = px/2 if abs(n[0]) > 0.5 else py/2
+        for sgn in (1, -1):
+            t = sgn * (proj/2 + RIB/2)
+            cx = n[0]*half + tan[0]*t
+            cy = n[1]*half + tan[1]*t
+            aim = a + sgn*SPLAY          # this board's outward normal
+            rot = aim - 90.0             # a box's local +Y starts at 90 deg
+            out.append(_box(coll, SENSOR_W + 2*SENSOR_FIT, 2*depth,
+                            SENSOR_H + SENSOR_FIT, (cx, cy, zc),
+                            f"t_pkt_{a:.0f}_{sgn}", rot_z=rot))
+            # wire slot, running inboard from the back of the pocket
+            ax, ay = math.cos(math.radians(aim)), math.sin(math.radians(aim))
+            out.append(_box(coll, WIRE_W, 30.0, WIRE_H,
+                            (cx - ax*(depth + 15.0), cy - ay*(depth + 15.0), zc),
+                            f"t_wire_{a:.0f}_{sgn}", rot_z=rot))
+    return out
 
 def _bool(target, tool, op):
     bpy.context.view_layer.objects.active = target
@@ -117,7 +186,7 @@ def _bool(target, tool, op):
     m.operation = op; m.object = tool; m.solver = 'EXACT'
     bpy.ops.object.modifier_apply(modifier=m.name)
 
-def build(coll, riser_h, collar_h, name="riser"):
+def build(coll, riser_h, collar_h, name="riser", sensors=False):
     """Build one plate centred on the origin, sitting on z=0."""
     px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
     plate = _box(coll, px, py, riser_h, (0, 0, riser_h/2), name)
@@ -134,10 +203,28 @@ def build(coll, riser_h, collar_h, name="riser"):
             tools.append(_cyl(coll, (STANDOFF_AF + HEX_CLEAR) / math.cos(math.pi/6),
                               tall, (sx*BOLT_X/2, sy*BOLT_Y/2, riser_h/2),
                               f"t_hex_{sx}_{sy}", verts=6))
+    if sensors:
+        tools += sensor_cutters(coll, riser_h)
     for t in tools:
         _bool(plate, t, 'DIFFERENCE')
         bpy.data.objects.remove(t, do_unlink=True)
     return plate
+
+
+def build_sensor_coupon(coll, name="riser_sensor-coupon"):
+    """One face segment carrying a splayed pair. ~15 min to print.
+
+    Tests the three things the full block cannot tell us cheaply: does a
+    board slide into the pocket, is SENSOR_FIT right, and does the 22.5 deg
+    splay leave enough plastic in the centre rib.
+    """
+    px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
+    h = 25.0
+    blk = _box(coll, px, 22.0, h, (0, py/2 - 11.0, h/2), name)
+    for t in sensor_cutters(coll, h, faces=(90.0,)):
+        _bool(blk, t, 'DIFFERENCE')
+        bpy.data.objects.remove(t, do_unlink=True)
+    return blk
 
 def export(obj, path):
     """STL in millimetres. Blender works in metres; Bambu Studio assumes mm."""
@@ -155,12 +242,18 @@ def main():
           f"{STANDOFF_AF + HEX_CLEAR:.2f} mm A/F, bore {BORE_D:.0f} mm\n")
     for key in BUILD:
         v = STAGES[key]
-        o = build(coll, v["riser_h"], v["collar_h"], name=f"riser_{key}")
+        if v.get("coupon"):
+            o = build_sensor_coupon(coll, name=f"riser_{key}")
+        else:
+            o = build(coll, v["riser_h"], v["collar_h"], name=f"riser_{key}",
+                      sensors=v.get("sensors", False))
         path = os.path.join(OUT, f"s1-riser-{key}.stl")
         n = export(o, path)
         wall = MARGIN - (STANDOFF_AF + HEX_CLEAR)/2
-        print(f"  {key:<11} h={v['riser_h']:5.1f}  collar={v['collar_h']:4.1f}  "
-              f"wall={wall:4.2f}  tris={len(o.data.polygons):4d}  {n/1024:6.1f} KB")
+        tag = " +sensors" if v.get("sensors") else ""
+        print(f"  {key:<14} h={v['riser_h']:5.1f}  collar={v['collar_h']:4.1f}  "
+              f"wall={wall:4.2f}  tris={len(o.data.polygons):4d}  "
+              f"{n/1024:6.1f} KB{tag}")
         o.hide_set(True)
     print(f"\nwrote {len(BUILD)} STLs to {OUT}")
     if SUPERSEDED:

@@ -82,6 +82,7 @@ to attribute after the fact.
 | `MOUNT_Z` | 108 mm | calibrated model, Z axis validated to 0.8% |
 | **`BORE_D`** | **46 mm** | **ESTIMATE from a photo — not measured** |
 | **`CHASSIS_THREAD`** | **5 mm** | **ESTIMATE — a stud that bottoms out holds nothing** |
+| **`SENSOR_W/H/T`** | **20 / 15 / 4 mm** | **UNVERIFIED — an AliExpress listing, not a datasheet** |
 
 The two estimates are the open risks. `CHASSIS_THREAD` is the dangerous one:
 too long a stud feels tight while clamping nothing, holding a gimbal.
@@ -116,6 +117,45 @@ binary — geometry is cheap to regenerate, the decision behind it is not, so a
 | `h15` | 15 mm | Least lift that still leaves volume; shortest lever arm. |
 | `h20` | 20 mm | Middle. |
 | `h25` | 25 mm | Most volume, most lever arm. |
+| `sensor-coupon` | 25 mm | One face segment with a splayed pocket pair, ~15 min. |
+| `h25-sensors` | 25 mm | The payload block: 8 pockets at 45°. Not before the coupon. |
+
+## Sensor coverage, and why the pockets are angled
+
+Eight VL53L1X aimed at 45° spacing, two per face, each pocket splayed
+±22.5°.
+
+**Boards lying flat on a face would all aim the same way** — that is
+redundancy, not coverage. The obvious fix, chamfering the corners into
+diagonal faces, is impossible here: the bolt pattern is 58 × 77 inside a
+76 × 95 plate, so *the corners are where the standoffs are*, and every
+chamfer wide enough for a board cuts into a hex pocket. Angling the pockets
+inside the flat walls buys the arc and changes no outline. Verified
+clearance from sensor geometry to the nearest standoff pocket: **5.77 mm**.
+
+Coverage is 216° of 360° (60%), leaving 18° gaps. At 500 mm a gap spans
+158 mm and the robot is 320 mm wide, so **nothing robot-sized hides in one
+at stopping range**.
+
+**Two numbers that constrain the whole design:**
+
+- **`h15` cannot carry wall-mounted sensors.** Its 11 mm window is shorter
+  than the shortest VL53L1X carrier sold (Pololu, 13 mm). h20's 16 mm
+  window leaves 1 mm on a 15 mm board, which is not a printable fit. That
+  is what makes h25 the payload height — geometry, not preference.
+- **The 27° cone hits the floor at ~490 mm** when aimed horizontally from
+  this height, so a "4 m" sensor is really a 490 mm sensor here. The
+  stopping distance is 400 mm. **That 90 mm margin is what caps safe
+  speed**, and narrowing the SPAD ROI to 15° is the lever if it turns out
+  too tight (floor moves to ~900 mm).
+
+### What to measure on `sensor-coupon`
+
+1. **Does a board slide into the pocket?** Too tight → raise `SENSOR_FIT`.
+   This is also the first real check of the listing's 20 × 15 × 4 mm.
+2. **Does the centre rib survive the print?** It is the thinnest plastic
+   between the splayed pair.
+3. **Is the wire slot usable** with the connector actually on the board.
 
 Heights above the coupon include a 4 mm collar around the bore, keeping the
 gimbal loom off a printed edge.
