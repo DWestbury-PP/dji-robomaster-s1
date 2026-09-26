@@ -4,7 +4,8 @@
 > to resume work. Rationale: [DECISIONS.md](DECISIONS.md). Transport paths and
 > firmware triage: [HARDWARE.md](HARDWARE.md). Environment, network and
 > toolchain: [SETUP.md](SETUP.md). Milestone write-ups: [M1.md](M1.md),
-> [M3.md](M3.md), [M4.md](M4.md), [BAKEOFF.md](BAKEOFF.md). Investigations:
+> [M3.md](M3.md), [M4.md](M4.md), [BAKEOFF.md](BAKEOFF.md),
+> [BAKEOFF-JEV.md](BAKEOFF-JEV.md). Investigations:
 > [SPIKE-arm64-bridge.md](SPIKE-arm64-bridge.md).
 
 ## Where things stand (2026-09-13)
@@ -80,6 +81,7 @@ See ARCHITECTURE.md §7.
 | M4.4 — the experience log | ✅ **done — recording every drive by default** |
 | M4.9 — hide boxes / narration | ✅ done |
 | M4.5 — advisory looming highlight | queued |
+| M4.6 — structuring layer over the narrator's prose | queued — evaluated, [BAKEOFF-JEV.md](BAKEOFF-JEV.md) |
 | M5 — multi-vehicle: process per robot, switchable console | ✅ **done — two vehicles, one dropdown** |
 | M5.1 — per-vehicle perception, and a flat battery not stopping the rest | ✅ done |
 | M5 — mobile app | not started |
@@ -361,6 +363,37 @@ has to avoid fouling. Size it from what the coupon shows.
    degradation. No blocker for M1.
 
 ## Session log
+
+**Session 10 (2026-09-21).** Evaluated TypeSafe's **Jev**, a classifier that
+returns typed decisions instead of text, against the question of whether a
+fast model reopens anything #15 parked. Full write-up:
+[BAKEOFF-JEV.md](BAKEOFF-JEV.md); decision in DECISIONS.md #22; reproduce with
+`python3 scripts/jev-probe.py`.
+
+**The answer was no for the tier we expected and yes for one we had not
+considered.** The plan going in was sensors → model → move, with the model
+supplying sub-second obstacle avoidance. It fails that three ways over: 319 ms
+median against a 250 ms deadman, a loss to five lines of arithmetic on
+time-of-flight data (6–7 of 8 against 8 of 8), and an answer at the 400 mm
+threshold that flipped between identical runs. It lost even when handed the
+comparison pre-computed in a sentence that named the answer.
+
+**It won somewhere else entirely.** Handed the real frame-0208 caption — the
+one where gemma4 wrote a correct obstruction sentence and returned
+`clear_path: ahead` beside it — Jev returned `clear_path: none` at 0.98, and
+7 of 7 captions overall, with confidence dropping to 0.23 on the genuinely
+ambiguous frame. That is the seam #16 left deliberately empty. The lesson
+generalises past the vendor: the VLM is good at looking and bad at deciding,
+and a classifier is the reverse, so stop asking one model to do both.
+
+**Two cautions are recorded.** `confidence` is distribution sharpness, not
+calibration — TypeSafe's own docs decline to claim otherwise, and ours read
+0.91 on pure garbage, so it must never gate an action. And a `front = 99999`
+reading produced a confident `forward`, which is why range validation belongs
+on the ESP32, upstream of anything that reasons.
+
+**#15 stands untouched.** What blocks autonomy is geometry, not detection
+quality, and a model reading prose produces no distances.
 
 **Session 8 (2026-09-15).** A different kind of day: CAD rather than code. Drove
 Blender directly over the `blender-mcp` addon's socket on `127.0.0.1:9876` — no

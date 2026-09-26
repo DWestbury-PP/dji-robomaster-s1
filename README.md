@@ -14,6 +14,11 @@ measured decision rather than a missing feature — see
 [docs/BAKEOFF.md](docs/BAKEOFF.md) and `DECISIONS.md` #15. Every drive is
 recorded, so the demonstration data exists for the day that changes.
 
+That decision gets re-tested whenever the state of the art moves. It most
+recently survived a sub-second model in
+[docs/BAKEOFF-JEV.md](docs/BAKEOFF-JEV.md), which found that speed was never
+the thing standing in the way.
+
 No modification to the robot: it runs stock firmware and is driven by
 impersonating the mobile app.
 
@@ -152,6 +157,7 @@ cd perception/detector && uv run detect.py -v   # the detector
 | [docs/M3.md](docs/M3.md) | The browser console: running it, controls, what it measures |
 | [docs/M4.md](docs/M4.md) | Perception transport: cadence classes, and why observations are dated |
 | [docs/BAKEOFF.md](docs/BAKEOFF.md) | Model comparison on real frames — local and hosted, and what it settled |
+| [docs/BAKEOFF-JEV.md](docs/BAKEOFF-JEV.md) | A classifier vs. five lines of arithmetic, and where a fast model actually belongs |
 | [docs/SPIKE-arm64-bridge.md](docs/SPIKE-arm64-bridge.md) | Why `s1teleop` runs under Rosetta, and what native arm64 would cost |
 
 ## The robot

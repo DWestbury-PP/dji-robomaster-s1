@@ -133,12 +133,35 @@ No schema — free prose (#16). Nothing downstream parses it and nothing acts on
 it (#15), so the only measure that matters is whether the caption is true and
 readable.
 
+### structuring tier — evaluated, not yet built
+
+The seam between the narrator's prose and anything that reads it. #16 left it
+deliberately empty because asking the VLM for structured fields produced
+schema-valid nonsense on exactly the actionable ones.
+
+A **classifier**, not a generator, fills it: text in, typed fields out. On the
+2026-09-21 bake-off Jev read the narrator's own captions to 7/7 on
+`clear_path`, including the frame where gemma4 wrote a correct obstruction
+sentence and returned `clear_path: ahead` beside it. **The VLM is good at
+looking and bad at deciding; a classifier is the reverse**, so each does one
+job (DECISIONS.md #22, BAKEOFF-JEV.md).
+
+It belongs here — downstream of the narrator, off the critical path, posting
+to `/perception` like any other producer — and nowhere near the wheels. Its
+output is logged and drawn; it actuates nothing (#15).
+
 ### intent loop — deferred
 
 Acting on what the tiers observe waits for a model fast and
 spatially reliable enough to trust, which the 2026-09-05 bake-off showed does
 not currently exist (DECISIONS.md #15). The transport is already in place for
 when it does.
+
+The 2026-09-21 bake-off narrowed *why* it does not exist. Jev cleared the
+latency half at 319 ms and failed the spatial half outright: it lost to five
+lines of arithmetic on range data and gave an unstable answer at the
+threshold. **The missing piece was never speed** — it is that reading
+distances is arithmetic, and the tier that does it wants no model at all.
 
 ## 4. Command model
 
@@ -304,6 +327,9 @@ numbers. This one does not.
 [x] M4.4 — The experience log: frames + narration + OPERATOR INPUT, time-aligned.
            On by default. Detections join it when M4.2 lands
 [ ] M4.5 — Advisory looming highlight in the console, wired to nothing
+[ ] M4.6 — Structuring layer: a classifier reads the narrator's prose into
+           fields, logged beside the caption and wired to nothing
+           (DECISIONS.md #22, BAKEOFF-JEV.md)
 [x] M5  — Multi-vehicle: one process per robot, a supervisor console over them,
           per-tab selection, fleet-wide e-stop (DECISIONS.md #21)
 [ ] M5 — Mobile app — decide then whether it goes through the Mac or talks to
@@ -312,7 +338,9 @@ numbers. This one does not.
     Deferred, not abandoned (DECISIONS.md #15):
     · reflex veto clamping the governor — needs depth or a calibrated ground plane
     · intentions schema and closed-loop autonomy — needs a model fast and
-      spatially reliable enough to trust, which does not currently exist
+      spatially reliable enough to trust. Jev (2026-09-21) is the first
+      candidate fast enough and still fails the spatial half: it loses to
+      five lines of arithmetic on range data (BAKEOFF-JEV.md)
 ```
 
 M1 was a measurement milestone rather than a feature, and it earned its place:
