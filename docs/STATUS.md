@@ -297,6 +297,20 @@ clamping nothing, holding a gimbal.
 | TCA9548A 8-channel I²C mux | 5 | 1 needed; makes XSHUT moot |
 | M4 male–female standoff, 304 stainless, 6 mm stud, **25 mm** | 20 | h25 riser |
 | same, **20 mm** | 30 | h20 fallback |
+| **Seeed XIAO ESP32-C5** — ordered 2026-10-31, in transit | a few (count on arrival) | the pod's MCU |
+| *dual-band (2.4/5 GHz) U.FL flexible antenna* — **not yet ordered** | 1 per pod | the C5 ships with a 2.4 GHz-only antenna |
+| *small buck converter or power bank* — **not yet chosen** | 1 per pod | see "Pod power" below |
+
+**Why the XIAO ESP32-C5.** 21 × 17.8 mm with USB-C, the smallest board that
+still has a U.FL antenna connector. It is also the only XIAO with 5 GHz Wi-Fi,
+so the pod can stay off whichever band the S1's video is using; router-mode
+jitter (3.3 ms σ) is a baseline this project protects. The pod needs only SDA,
+SCL and power, so the XIAO's small pin count is enough. Fallback if the C5
+can't be had: XIAO ESP32-C3, same footprint, 2.4 GHz only.
+
+**Ten sensors, eight mux channels.** 8 wall plus 2 cliff sensors is more than
+one TCA9548A can serve. Use two on the same bus, the second set to `0x71` with
+its A0 jumper: wall sensors on the first, cliff sensors on the second.
 
 The `C` suffix matters: the `F` variants put a microcontroller in front of the
 sensor and speak UART, which does not go through the mux. No bolts are needed —
@@ -309,19 +323,70 @@ Matek 3901-L0X) need ~80 mm to focus against 27–30 mm of clearance. If slip
 detection is wanted later, buy a **PAA5100JE** (Pimoroni PIM453) — it is not on
 AliExpress, and nothing there is a drop-in near-field substitute.
 
-**When the parts arrive, check before printing anything tall:**
+**Parts arrived and measured 2026-10-31.** Every guessed constant except
+the sensor cap window has been replaced; see cad/README.md for the table.
 
-1. **Standoff hex width** — must be 7 mm A/F to be captured by the pockets.
-   If 6 mm, change `STANDOFF_AF` and regenerate.
-2. **Chassis hole depth** (calipers' depth rod, gimbal off) against the 6 mm
-   stud. This replaces the `CHASSIS_THREAD = 5.0` guess. A stud that bottoms
-   out feels tight while clamping nothing.
-3. **ToF board envelope** — width ≤ 23.4, height ≤ 21, thickness ≤ ~5 mm,
-   measured **with and without** the black cap the listing photos show.
-   Then replace the UNVERIFIED `SENSOR_W/H/T`.
-4. **Chip identity** — VL53L1X register `0x010F` reads `0xEA`. Mislabelled
-   VL53L0X boards would invalidate the ~490 mm floor-return figure.
-5. **Peel the protective film** off each sensor window.
+- **Standoffs:** 6.7–6.8 mm across flats, so `STANDOFF_AF` is now 6.75. The
+  old 7.35 mm pocket gave 0.6 mm of slop, which matches the shake felt on the
+  coupon. Bodies measure 20.0 and 24.9 mm with a 5.8 mm stud. The plate is now
+  cut 0.4 mm shorter than the body, so the gimbal clamps against metal only.
+- **Chassis thread:** the whole 5.8 mm stud threads in and seats snug.
+  `CHASSIS_THREAD` was the most dangerous guess, and it is no longer a risk.
+- **Bolt pattern and bore:** all four holes line up on the fit coupon, and the
+  46 mm bore clears the loom.
+- **TOF400C:** 19.9 × 11.6 mm and 4.0 mm thick, including the parts on the
+  back. The optical centre sits 1.5 mm above the board's centre. Labelling
+  confirmed as TOF400C-VL53L1X. Because 11.6 mm is shorter than the listing
+  claimed, **h20 can carry the sensors again**, so h20 versus h25 is an open
+  choice.
+- **Wiring decided:** wires are soldered straight to the pads, with no
+  header. Only VIN, GND, SDA and SCL are used; the mux makes SHUT
+  unnecessary. The cliff sensors (TOF050C) can keep their headers.
+- **Mounting the boards:** still an experiment. The next coupon will hold two
+  variants side by side, one loaded from the top behind a front lip and one
+  loaded from the front and retained with glue or M2 screws.
+- **TCA9548A:** 31.1 × 21.8 × 2.5 mm, needed for the interior layout.
+- **Still to do:** read chip ID `0x010F` = `0xEA` (needs the MCU); measure
+  the cap's width and height with calipers (the current figure is scaled from
+  a photo); peel the window film after assembly.
+
+**Blocker found: the gimbal cannot seat on the riser.** The gimbal's base has
+a disc about 50.3 mm across. On the bare chassis it drops into the chassis's
+own recess. The riser offers it a 46 mm bore and a collar with a 52 mm
+outside diameter, so there is nowhere for it to go. The next block needs a
+counterbore in its top face, sized from the disc's diameter and height (plus
+any locating tabs), and deep enough that the disc never bottoms out.
+**Update, same day: the disc is the gimbal's electrical connection, not a
+locating boss.** It is 7.8 mm thick, measured below the arms. Under its cover
+are **two downward-facing 4-pin sockets**, which the chassis plugs come up
+through the bore to meet. Cable slack reaches a 20 mm lift but not 25, so
+**h20 is the build**. The design now has a 51 × 7.9 mm counterbore in the top
+face, deep enough that the disc never bottoms out; the collar is gone; and
+there are generous notches for the four square posts on the gimbal ring. The
+posts' shape is still to be captured with a clay impression.
+
+**Print next:** `h20` (gimbal fit, plug reach) and `sensor-coupon` (the `lip`
+and `front` pocket styles side by side). See cad/README.md for what to check.
+
+**Router band:** to be read from the router's client list. Until a riser can
+carry the gimbal, that means temporarily bolting the gimbal back onto the
+bare chassis. That is fine for a power-up and a Wi-Fi check.
+
+**Pod power: two candidates, neither measured yet.**
+1. **Separate supply first.** Use a power bank into the XIAO's USB-C, or a 1S
+   LiPo on its battery pads. This leaves DJI's electronics untouched, and it
+   lets us measure the pod's real draw before choosing anything permanent.
+   Estimate: under about 600 mA peak.
+2. **The S1's own power, later, and only after measuring it.** The motion
+   controller bay (photographed 2026-10-31) has M BUS ×3, CAN BUS ×2,
+   POWER, UART (R/T/G), S-BUS, and a 6-channel PWM OUTPUT header on 2.54 mm
+   pitch. **None of this is officially documented.** A forum user reports
+   that the PWM header carries 5 V, which would mean no buck converter and a
+   standard servo plug. The same user reports battery voltage, about 12 V, on
+   pin 4 of the 4-pin bus connectors. Both are unverified, and nobody has
+   published a current limit. **Measure with a multimeter before connecting
+   anything,** idle and while driving. Even if the 5 V rail is there, drawing
+   600 mA from it risks browning out the motion controller.
 
 **Sensor payload settled on geometry (2026-09-21).** Eight sensors at 45°
 spacing, two per face, each pocket splayed ±22.5°. Print `sensor-coupon`

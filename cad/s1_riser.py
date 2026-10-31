@@ -24,10 +24,16 @@ PROVENANCE OF THE NUMBERS
     M4                DJI Quick Start Guide v1.4, step 59 ("4x M4-B")
     MOUNT_Z / DECK_Z  measured off the calibrated model, whose Z axis was
                       validated against ground clearance to 0.8%
-    BORE_D            ESTIMATE from a photo - not yet measured
-    CHASSIS_THREAD    ESTIMATE - a stud that bottoms out holds nothing
-    SENSOR_*          UNVERIFIED - read off an AliExpress listing, not a
-                      datasheet and not calipers. Print sensor-coupon first.
+    BORE_D            confirmed by fit 2026-10-31 (fit coupon on the chassis).
+                      NOT big enough for the gimbal's ~50.3 mm base disc -
+                      see GIMBAL_DISC_D; the top interface is still open.
+    CHASSIS_THREAD    calipers 2026-10-31: the full 5.8 mm stud threads in
+                      and seats snug. No longer a risk.
+    STANDOFF_*        calipers 2026-10-31: 6.7-6.8 A/F, bodies 20.0 / 24.9
+    GIMBAL_DISC_*     calipers 2026-10-31; POST_* read off a photo
+    SENSOR_*          calipers 2026-10-31 on a TOF400C: 19.9 x 11.6, 4.0 thick
+                      including the back-side SMD parts. Cap window still
+                      read off a photo - see SENSOR_CAP_*.
 
 SENSOR COVERAGE
     Two pockets per face, splayed +-SPLAY, give 8 beams at 45 deg spacing.
@@ -46,17 +52,49 @@ ORIG_SCREW_L   = 8.0
 MOUNT_Z        = 108.0
 # --- ESTIMATES: replace as measurements land ----------------------------------
 BORE_D         = 46.0
-CHASSIS_THREAD = 5.0
+CHASSIS_THREAD = 5.8     # whole stud engages
+# --- gimbal interface (top face) ---------------------------------------------
+# The gimbal's base disc is its electrical interface: two downward-facing 4-pin
+# sockets that the chassis plugs mate into. It hangs GIMBAL_DISC_H below the
+# arms, so the top face needs a counterbore it can never bottom out in -
+# otherwise the disc, not the standoffs, carries the clamp.
+GIMBAL_DISC_D  = 50.3    # calipers
+GIMBAL_DISC_H  = 7.8     # calipers, below the underside of the arms
+DISC_CLEAR_D   = 0.7     # on diameter
+DISC_CLEAR_Z   = 0.5     # below the disc, so it can never bottom out
+# Four small square posts on the gimbal ring at 0/90/180/270 deg, apparently
+# reaching as low as the disc. UNVERIFIED - read off a photo; to be replaced by
+# a clay impression. Notches are cut generous until then.
+POST_R         = 27.0    # radius of the post centres
+POST_W         = 6.0     # tangential
+POST_L         = 6.0     # radial
 # --- hardware -----------------------------------------------------------------
-STANDOFF_AF    = 7.0     # hex across flats
-# --- sensor payload: UNVERIFIED, from a listing rather than a datasheet -------
+STANDOFF_AF    = 6.75    # hex across flats, measured 6.7-6.8
+# Body length by nominal size, measured. The plate is cut PLATE_GAP shorter so
+# the gimbal clamps metal-to-metal and the plastic never enters the clamp path.
+STANDOFF_BODY  = {20: 20.0, 25: 24.9}
+PLATE_GAP      = 0.4
+# --- sensor payload: TOF400C (VL53L1X), measured 2026-10-31 -----------------
 # The 27 deg cone puts the floor at ~490 mm when aimed horizontally from this
 # height, which is only 90 mm beyond the 400 mm stopping distance. That margin
 # is what caps safe speed, so it is a design constraint and not a detail.
-SENSOR_W       = 20.0    # board width
-SENSOR_H       = 15.0    # board height - must clear the wall window
-SENSOR_T       = 4.0     # board plus tallest component
+SENSOR_W       = 19.9    # board width
+SENSOR_H       = 11.6    # board height, pad row included - must clear the window
+SENSOR_T       = 4.0     # PCB + cap + back-side SMD parts; NO header (wires
+                         # are soldered straight to the pads)
+SENSOR_EYE_UP  = 1.5     # optical centre sits this far above the board centre
+                         # (4.0 mm to the top edge, 7.0 to the pad edge)
+# Cap size drives the "lip" style's window.
+SENSOR_CAP_W   = 11.8    # UNVERIFIED - scaled off a photo, not calipers
+SENSOR_CAP_H   = 6.8     # UNVERIFIED - same
 SENSOR_FIT     = 0.30    # clearance per pocket; tune on sensor-coupon
+# Two ways of holding a board, compared side by side on sensor-coupon:
+#   "front"  pocket open to the face; board pressed in from outside and glued
+#   "lip"    board drops in from the top face into a slot behind a front lip,
+#            and looks out through a window sized for the cap plus the cone
+POCKET_STYLE   = "front" # the full block's choice, until the coupon decides
+LIP_T          = 1.2     # thinnest lip, at the board's outermost corner
+CONE_HALF      = 13.5    # VL53L1X full FoV is 27 deg
 SPLAY          = 22.5    # half the 45 deg spacing
 RIB            = 3.0     # plastic between the pair
 WIRE_W, WIRE_H = 5.0, 3.0
@@ -76,32 +114,38 @@ OUT = os.path.expanduser(
 # is cheap to regenerate; the decision behind it is not, so the note travels
 # with the numbers.
 STAGES = {
-    "fit-coupon": dict(riser_h=5.0, collar_h=0.0, note=(
+    "fit-coupon": dict(riser_h=5.0, note=(
         "Bolt pattern and bore only, ~10 min to print. Checks the two things "
         "most likely to be wrong - hole positions and bore clearance - before "
         "committing to a tall print. Also the part to tune HEX_CLEAR on.")),
-    "h15": dict(riser_h=15.0, collar_h=4.0, note=(
-        "Least lift that still leaves usable volume. Shortest lever arm on the "
-        "standoffs, so the safest for gimbal stability.")),
-    "h20": dict(riser_h=20.0, collar_h=4.0, note="Middle of the range."),
-    "h25": dict(riser_h=25.0, collar_h=4.0, note=(
-        "Most sensor volume, most lever arm. Compare stability against h15 on "
-        "a hard stop before committing.")),
-    "sensor-coupon": dict(riser_h=25.0, collar_h=0.0, coupon=True, note=(
-        "One face segment with a splayed pair of sensor pockets. Prints in "
-        "~15 min and settles SENSOR_FIT, the splay, and whether the centre "
-        "rib survives - none of which the full block tests cheaply.")),
-    "h25-sensors": dict(riser_h=25.0, collar_h=4.0, sensors=True, note=(
-        "The payload block: 8 pockets at 45 deg spacing, two per face. h25 "
-        "rather than h20 because a 15 mm board in h20's 16 mm window leaves "
-        "1 mm total, which is not a printable fit. Do not print this before "
-        "sensor-coupon has confirmed a board actually slides in.")),
+    "h15": dict(riser_h=15.0, note=(
+        "Record only. Cannot carry a wall-mounted sensor, and predates the "
+        "gimbal-disc counterbore.")),
+    "h20": dict(riser_h=STANDOFF_BODY[20] - PLATE_GAP, disc=True, note=(
+        "The gimbal-fit test: plain block with the disc counterbore. h20 "
+        "because measured cable slack reaches a 20 mm lift but not 25. Checks "
+        "that the gimbal seats on the standoffs, the disc clears, and both "
+        "chassis plugs still reach their sockets.")),
+    "h25": dict(riser_h=STANDOFF_BODY[25] - PLATE_GAP, disc=True, note=(
+        "Record only. The gimbal's cables do not have the slack for 25 mm "
+        "without extension leads.")),
+    "sensor-coupon": dict(riser_h=STANDOFF_BODY[20] - PLATE_GAP, coupon=True,
+                          note=(
+        "One face segment at h20 height with the two pocket styles side by "
+        "side: 'lip' (top-loaded, behind a windowed lip) at the -X end and "
+        "'front' (pressed in from the face, glued) at the +X end. Settles "
+        "SENSOR_FIT, the retention method, and whether the rib survives.")),
+    "h20-sensors": dict(riser_h=STANDOFF_BODY[20] - PLATE_GAP, disc=True,
+                        sensors=True, note=(
+        "The payload block: 8 pockets at 45 deg, two per face, in "
+        "POCKET_STYLE. Do not print before h20 has proven the gimbal fit and "
+        "sensor-coupon has picked a style.")),
 }
-BUILD = ["fit-coupon", "sensor-coupon"]
+BUILD = ["h20", "sensor-coupon", "h20-sensors"]
 
-# h15 is kept in STAGES as a record, but it cannot carry wall-mounted sensors:
-# its 11 mm window is shorter than the shortest VL53L1X carrier sold. That is a
-# geometric fact, not a preference, and it is why the stack above starts at h20.
+# Height history: h15 was too short for any sensor window; h25 was chosen while
+# the board was believed to be 15 mm tall; h20 is where it landed once the board
+# measured 11.6 mm and the gimbal's cable slack turned out to stop short of 25.
 
 # Fastening schemes tried and rejected. No geometry is kept - they failed on
 # interface grounds rather than dimensions - but the reasons are what stop them
@@ -147,37 +191,87 @@ def _box(coll, x, y, z, loc, name, rot_z=0.0):
     coll.objects.link(o); return o
 
 
-def sensor_cutters(coll, riser_h, faces=(0.0, 90.0, 180.0, 270.0)):
+def sensor_cutters(coll, riser_h, faces=(0.0, 90.0, 180.0, 270.0),
+                   styles=None):
     """Two splayed pockets per face, plus a wire slot behind each.
 
-    `faces` are outward normals in degrees CCW from +X. A pocket box is
-    centred ON the face plane so half of it lies outside the part: that
-    single box cuts the cavity and opens the optical window in one go.
+    `faces` are outward normals in degrees CCW from +X. `styles` gives the
+    pocket style for the (+, -) member of each pair; default POCKET_STYLE for
+    both. The board is placed so its optical centre sits at mid-height, and
+    the wire slot leaves flush with the pocket floor, where the pads are.
     """
+    styles = styles or (POCKET_STYLE, POCKET_STYLE)
     px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
-    depth = SENSOR_T + SENSOR_FIT
-    proj  = SENSOR_W * math.cos(math.radians(SPLAY))
-    zc    = riser_h / 2
+    sp    = math.radians(SPLAY)
+    proj  = SENSOR_W * math.cos(sp)
+    eye_z = riser_h / 2
+    pz    = eye_z - SENSOR_EYE_UP              # pocket centre height
+    ph    = SENSOR_H + SENSOR_FIT
+    floor = pz - ph/2
     out   = []
     for a in faces:
         ar = math.radians(a)
         n   = (math.cos(ar), math.sin(ar))
         tan = (-math.sin(ar), math.cos(ar))
         half = px/2 if abs(n[0]) > 0.5 else py/2
-        for sgn in (1, -1):
+        for sgn, style in zip((1, -1), styles):
             t = sgn * (proj/2 + RIB/2)
-            cx = n[0]*half + tan[0]*t
-            cy = n[1]*half + tan[1]*t
             aim = a + sgn*SPLAY          # this board's outward normal
             rot = aim - 90.0             # a box's local +Y starts at 90 deg
-            out.append(_box(coll, SENSOR_W + 2*SENSOR_FIT, 2*depth,
-                            SENSOR_H + SENSOR_FIT, (cx, cy, zc),
-                            f"t_pkt_{a:.0f}_{sgn}", rot_z=rot))
-            # wire slot, running inboard from the back of the pocket
             ax, ay = math.cos(math.radians(aim)), math.sin(math.radians(aim))
+            tag = f"{a:.0f}_{sgn}"
+            if style == "front":
+                # Box centred ON the face plane: one cut makes cavity and
+                # window, and the board presses in from outside.
+                depth = SENSOR_T + SENSOR_FIT
+                cx, cy = n[0]*half + tan[0]*t, n[1]*half + tan[1]*t
+                out.append(_box(coll, SENSOR_W + 2*SENSOR_FIT, 2*depth, ph,
+                                (cx, cy, pz), f"t_pkt_{tag}", rot_z=rot))
+                bx, by = cx - ax*depth, cy - ay*depth      # back of board
+            elif style == "lip":
+                # Board centre placed so its outermost front corner is LIP_T
+                # inside the face; the pocket runs up through the top face.
+                tt = SENSOR_T + SENSOR_FIT
+                # Inset pockets bring their back corners together at the rib
+                # (0.8 mm at the "front" spacing), so space them to leave RIB.
+                t = sgn * ((SENSOR_W/2 + SENSOR_FIT)*math.cos(sp)
+                           + tt/2*math.sin(sp) + RIB/2)
+                inset = LIP_T + tt/2*math.cos(sp) + (SENSOR_W/2)*math.sin(sp)
+                cx = n[0]*(half - inset) + tan[0]*t
+                cy = n[1]*(half - inset) + tan[1]*t
+                top = riser_h + 1.0
+                out.append(_box(coll, SENSOR_W + 2*SENSOR_FIT, tt,
+                                top - floor, (cx, cy, (top + floor)/2),
+                                f"t_pkt_{tag}", rot_z=rot))
+                # Window: cap plus clearance, widened for the cone over the
+                # thickest lip it has to look through.
+                lip_max = LIP_T + SENSOR_W*math.sin(sp)
+                grow = 2*lip_max*math.tan(math.radians(CONE_HALF)) + 0.6
+                wl = 20.0
+                wx, wy = cx + ax*(tt/2 + wl/2), cy + ay*(tt/2 + wl/2)
+                out.append(_box(coll, SENSOR_CAP_W + grow, wl,
+                                SENSOR_CAP_H + grow, (wx, wy, eye_z),
+                                f"t_win_{tag}", rot_z=rot))
+                bx, by = cx - ax*tt/2, cy - ay*tt/2
+            else:
+                raise ValueError(f"unknown pocket style {style!r}")
+            # wire slot: inboard from the back of the board, flush with floor
             out.append(_box(coll, WIRE_W, 30.0, WIRE_H,
-                            (cx - ax*(depth + 15.0), cy - ay*(depth + 15.0), zc),
-                            f"t_wire_{a:.0f}_{sgn}", rot_z=rot))
+                            (bx - ax*15.0, by - ay*15.0, floor + WIRE_H/2),
+                            f"t_wire_{tag}", rot_z=rot))
+    return out
+
+def disc_cutters(coll, riser_h):
+    """Counterbore for the gimbal's base disc, plus notches for its posts."""
+    depth = GIMBAL_DISC_H - PLATE_GAP + DISC_CLEAR_Z
+    zc = riser_h                     # tools centred on the top face
+    out = [_cyl(coll, GIMBAL_DISC_D + DISC_CLEAR_D, 2*depth, (0, 0, zc),
+                "t_disc", verts=128)]
+    for a in (0.0, 90.0, 180.0, 270.0):
+        ar = math.radians(a)
+        out.append(_box(coll, POST_L, POST_W, 2*depth,
+                        (POST_R*math.cos(ar), POST_R*math.sin(ar), zc),
+                        f"t_post_{a:.0f}", rot_z=a))
     return out
 
 def _bool(target, tool, op):
@@ -186,23 +280,20 @@ def _bool(target, tool, op):
     m.operation = op; m.object = tool; m.solver = 'EXACT'
     bpy.ops.object.modifier_apply(modifier=m.name)
 
-def build(coll, riser_h, collar_h, name="riser", sensors=False):
+def build(coll, riser_h, name="riser", sensors=False, disc=False):
     """Build one plate centred on the origin, sitting on z=0."""
     px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
     plate = _box(coll, px, py, riser_h, (0, 0, riser_h/2), name)
 
-    if collar_h > 0:
-        collar = _cyl(coll, BORE_D + 6.0, collar_h, (0, 0, riser_h + collar_h/2), "c_tmp")
-        _bool(plate, collar, 'UNION')
-        bpy.data.objects.remove(collar, do_unlink=True)
-
-    tall = riser_h + collar_h + 40
+    tall = riser_h + 40
     tools = [_cyl(coll, BORE_D, tall, (0, 0, riser_h/2), "t_bore")]
     for sx in (1, -1):
         for sy in (1, -1):
             tools.append(_cyl(coll, (STANDOFF_AF + HEX_CLEAR) / math.cos(math.pi/6),
                               tall, (sx*BOLT_X/2, sy*BOLT_Y/2, riser_h/2),
                               f"t_hex_{sx}_{sy}", verts=6))
+    if disc:
+        tools += disc_cutters(coll, riser_h)
     if sensors:
         tools += sensor_cutters(coll, riser_h)
     for t in tools:
@@ -219,9 +310,9 @@ def build_sensor_coupon(coll, name="riser_sensor-coupon"):
     splay leave enough plastic in the centre rib.
     """
     px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
-    h = 25.0
+    h = STAGES["sensor-coupon"]["riser_h"]
     blk = _box(coll, px, 22.0, h, (0, py/2 - 11.0, h/2), name)
-    for t in sensor_cutters(coll, h, faces=(90.0,)):
+    for t in sensor_cutters(coll, h, faces=(90.0,), styles=("lip", "front")):
         _bool(blk, t, 'DIFFERENCE')
         bpy.data.objects.remove(t, do_unlink=True)
     return blk
@@ -245,13 +336,13 @@ def main():
         if v.get("coupon"):
             o = build_sensor_coupon(coll, name=f"riser_{key}")
         else:
-            o = build(coll, v["riser_h"], v["collar_h"], name=f"riser_{key}",
-                      sensors=v.get("sensors", False))
+            o = build(coll, v["riser_h"], name=f"riser_{key}",
+                      sensors=v.get("sensors", False), disc=v.get("disc", False))
         path = os.path.join(OUT, f"s1-riser-{key}.stl")
         n = export(o, path)
         wall = MARGIN - (STANDOFF_AF + HEX_CLEAR)/2
         tag = " +sensors" if v.get("sensors") else ""
-        print(f"  {key:<14} h={v['riser_h']:5.1f}  collar={v['collar_h']:4.1f}  "
+        print(f"  {key:<14} h={v['riser_h']:5.1f}  "
               f"wall={wall:4.2f}  tris={len(o.data.polygons):4d}  "
               f"{n/1024:6.1f} KB{tag}")
         o.hide_set(True)
