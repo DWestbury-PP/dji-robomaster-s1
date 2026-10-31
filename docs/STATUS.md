@@ -356,8 +356,21 @@ own recess. The riser offers it a 46 mm bore and a collar with a 52 mm
 outside diameter, so there is nowhere for it to go. The next block needs a
 counterbore in its top face, sized from the disc's diameter and height (plus
 any locating tabs), and deep enough that the disc never bottoms out.
-**Needed:** the disc's height below the gimbal's mounting-foot plane, and a
-photo of the gimbal's underside.
+**Update, same day: the disc is the gimbal's electrical connection, not a
+locating boss.** It is 7.8 mm thick, and photos of the underside show a cover
+over a PCB with **two downward-facing 4-pin sockets**. The two black plugs
+that come up through the chassis bore plug into these. So the riser has three
+jobs at its top face, not one:
+1. a counterbore of about 51 × 8.3 mm, so the disc never bottoms out;
+2. clearance for the four small square posts on the gimbal's mounting ring,
+   which presumably key into the notches on the chassis bore's rim;
+3. **those two chassis plugs must now reach about 24.5 mm higher.** If the
+   cables don't have that much slack, the riser needs extension leads in DJI's
+   4-pin format. That is the real feasibility question for the whole stack.
+
+**Needed:** how far each plug can reach above the chassis top surface; the
+posts' height, size and distance from the centre; and confirmation that 7.8 mm
+is measured below the underside of the arms.
 
 **Router band:** to be read from the router's client list. Until a riser can
 carry the gimbal, that means temporarily bolting the gimbal back onto the
