@@ -87,15 +87,26 @@ to attribute after the fact.
 | `SENSOR_W/H/T` | 19.9 / 11.6 / 4.0 mm | calipers on a TOF400C, no header |
 | `SENSOR_EYE_UP` | 1.5 mm | calipers: optical centre 4.0 from top, 7.0 from pad edge |
 | **`SENSOR_CAP_W/H`** | **11.8 / 6.8 mm** | **UNVERIFIED — scaled off a photo** |
-| **`GIMBAL_DISC_D`** | **50.3 mm** | **calipers — height and keying not yet measured** |
+| `GIMBAL_DISC_D/H` | 50.3 / 7.8 mm | calipers; H is measured below the arms |
+| **`POST_R/W/L`** | **27 / 6 / 6 mm** | **UNVERIFIED — read off a photo; clay impression to follow** |
 
-**The open problem is the top face, not the bottom.** The gimbal's base has a
-~50.3 mm disc that, on the bare chassis, drops into the chassis's own recess.
-The riser's 46 mm bore and its 52 mm-OD collar leave it nowhere to go, so the
-gimbal cannot seat on any print made so far. The next revision needs a
-counterbore in the top face sized from the disc's diameter **and height**, and
-deep enough that the disc never bottoms out — otherwise the disc, not the
-standoffs, carries the clamp, and the plastic is back in the load path.
+### The top face: the gimbal disc
+
+The gimbal's base disc is its **electrical interface**: two 4-pin sockets
+facing down, which the chassis plugs come up through the bore to meet. Earlier
+prints had a 52 mm-OD collar on top that left the disc nowhere to go. The
+collar is gone; the top face now has a **51.0 mm counterbore, 7.9 mm deep**.
+That is the disc's 7.8 mm, less the 0.4 mm `PLATE_GAP`, plus 0.5 mm below it,
+so the disc can never bottom out. If it did, the disc rather than the
+standoffs would carry the clamp.
+
+There are also **four notches at 0/90/180/270°** for the small square posts
+on the gimbal ring. The posts look as though they reach as low as the disc,
+but they haven't been measured, so the notches are deliberately generous.
+
+**Cable slack sets the height.** The chassis plugs reach a 20 mm lift but
+not 25, so **h20 is the build**. h25 would need extension leads in DJI's
+4-pin format.
 
 ### Printing (Bambu X1C, 0.4 mm nozzle)
 
@@ -123,12 +134,12 @@ binary — geometry is cheap to regenerate, the decision behind it is not, so a
 
 | Stage | Height | For |
 |---|---|---|
-| `fit-coupon` | 5 mm | Pattern and bore only, ~10 min. Print this first. |
-| `h15` | 15 mm | Least lift that still leaves volume; shortest lever arm. |
-| `h20` | 20 mm | Middle. |
-| `h25` | 25 mm | Most volume, most lever arm. |
-| `sensor-coupon` | 25 mm | One face segment with a splayed pocket pair, ~15 min. |
-| `h25-sensors` | 25 mm | The payload block: 8 pockets at 45°. Not before the coupon. |
+| `fit-coupon` | 5 mm | Pattern and bore only, ~10 min. Done; all four holes line up. |
+| `h15` | 15 mm | Record only. Too short for a sensor, and has no disc counterbore. |
+| **`h20`** | **19.6 mm** | **Gimbal-fit test: plain block with the disc counterbore. Print next.** |
+| `h25` | 24.5 mm | Record only. The cables lack the slack for it. |
+| **`sensor-coupon`** | **19.6 mm** | **One face segment: a `lip` pocket at −X and a `front` pocket at +X.** |
+| `h20-sensors` | 19.6 mm | The payload block in `POCKET_STYLE`. Not before both of the above. |
 
 ## Sensor coverage, and why the pockets are angled
 
@@ -149,26 +160,41 @@ at stopping range**.
 
 **Two numbers that constrain the whole design:**
 
-- **`h15` cannot carry wall-mounted sensors.** Its 11 mm window is shorter
-  than the shortest VL53L1X carrier sold (Pololu, 13 mm). h20's 16 mm
-  window leaves 1 mm on a 15 mm board, which is not a printable fit. That
-  is what makes h25 the payload height — geometry, not preference.
+- **The window height.** The measured 11.6 mm board fits h20's height with
+  about 7.7 mm to spare. Each board is positioned so its optical centre, not
+  its PCB centre, sits at mid-height. h25 was only ever chosen because the
+  listing claimed the board was 15 mm tall.
 - **The 27° cone hits the floor at ~490 mm** when aimed horizontally from
   this height, so a "4 m" sensor is really a 490 mm sensor here. The
   stopping distance is 400 mm. **That 90 mm margin is what caps safe
   speed**, and narrowing the SPAD ROI to 15° is the lever if it turns out
   too tight (floor moves to ~900 mm).
 
-### What to measure on `sensor-coupon`
+### Two pocket styles, compared on `sensor-coupon`
 
-1. **Does a board slide into the pocket?** Too tight → raise `SENSOR_FIT`.
-   This is also the first real check of the listing's 20 × 15 × 4 mm.
-2. **Does the centre rib survive the print?** It is the thinnest plastic
-   between the splayed pair.
-3. **Is the wire slot usable** with the connector actually on the board.
+- **`front`** — the original. The pocket is open to the face and the board
+  presses in from outside, held with a dab of glue. Pairs meet in a V at the
+  face, with no flat rib between them.
+- **`lip`** — the board drops in from the top face into a slot behind a lip
+  at least 1.2 mm thick, looking out through a window. The window is the cap
+  size, plus clearance, plus the 27° cone's spread across the thickest lip
+  (about 8.9 mm). That leaves about 1.6 mm of lip on each side of the board
+  to hold it. Inset pockets would close the rib to 0.8 mm, so `lip` pairs
+  are spaced to keep a full 3 mm `RIB`.
 
-Heights above the coupon include a 4 mm collar around the bore, keeping the
-gimbal loom off a printed edge.
+Both styles put the wire slot flush with the pocket floor, where the pads
+are, since the wires are soldered straight on. Checked on the full block:
+both styles build manifold. The nearest any pocket comes to the disc
+counterbore, a post notch, a hex pocket or the bore is 6.0 mm for `front` and
+2.1 mm for `lip` (both against a post notch).
+
+### What to check on `sensor-coupon`
+
+1. **Does a board slide into each pocket?** Too tight → raise `SENSOR_FIT`.
+2. **`lip`:** does the board drop in and stay put, and does the window leave
+   the cap fully clear? The cap size is still taken from a photo.
+3. **`front`:** does the V between the pair print cleanly, and does glue hold?
+4. **Do the wire slots line up with the pads?**
 
 `SUPERSEDED` records fastening schemes that were tried and rejected. No
 geometry is kept — they failed on interface grounds, not dimensions — but the
