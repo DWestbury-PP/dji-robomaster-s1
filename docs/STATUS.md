@@ -288,11 +288,40 @@ rebuilds from `cad/s1_model.py`, so no `.blend` needs keeping.
 `CHASSIS_THREAD = 5.0`: a standoff stud that bottoms out feels tight while
 clamping nothing, holding a gimbal.
 
-**Hardware still to order:** M4 male-female standoffs, 7 mm A/F, body length to
-match the chosen riser. Nothing assembles without them. Plus 8 VL53L1X carriers
-and a TCA9548A — the mux has exactly 8 channels, and using it means the cheap
-carriers need no XSHUT pin broken out, which is the thing most likely to be
-missing from a budget board.
+**Parts ordered 2026-10-25** (AliExpress), all variants checked against the CAD:
+
+| part | qty | for |
+|---|---|---|
+| TOF400C — VL53L1X, I²C | 10 | the 8 wall pockets, plus spares |
+| TOF050C — VL6180X, I²C | 5 | cliff / stair detection, 2 needed |
+| TCA9548A 8-channel I²C mux | 5 | 1 needed; makes XSHUT moot |
+| M4 male–female standoff, 304 stainless, 6 mm stud, **25 mm** | 20 | h25 riser |
+| same, **20 mm** | 30 | h20 fallback |
+
+The `C` suffix matters: the `F` variants put a microcontroller in front of the
+sensor and speak UART, which does not go through the mux. No bolts are needed —
+DJI's original M4×8 screws go back in, into the standoffs' female ends. Their
+1 mm head is unusually low and may be clearing the gimbal's moving base, so
+treat a standard-head M4 as an emergency spare only.
+
+**Optical flow deliberately not ordered.** PMW3901-class boards (CJMCU-3901,
+Matek 3901-L0X) need ~80 mm to focus against 27–30 mm of clearance. If slip
+detection is wanted later, buy a **PAA5100JE** (Pimoroni PIM453) — it is not on
+AliExpress, and nothing there is a drop-in near-field substitute.
+
+**When the parts arrive, check before printing anything tall:**
+
+1. **Standoff hex width** — must be 7 mm A/F to be captured by the pockets.
+   If 6 mm, change `STANDOFF_AF` and regenerate.
+2. **Chassis hole depth** (calipers' depth rod, gimbal off) against the 6 mm
+   stud. This replaces the `CHASSIS_THREAD = 5.0` guess. A stud that bottoms
+   out feels tight while clamping nothing.
+3. **ToF board envelope** — width ≤ 23.4, height ≤ 21, thickness ≤ ~5 mm,
+   measured **with and without** the black cap the listing photos show.
+   Then replace the UNVERIFIED `SENSOR_W/H/T`.
+4. **Chip identity** — VL53L1X register `0x010F` reads `0xEA`. Mislabelled
+   VL53L0X boards would invalidate the ~490 mm floor-return figure.
+5. **Peel the protective film** off each sensor window.
 
 **Sensor payload settled on geometry (2026-09-21).** Eight sensors at 45°
 spacing, two per face, each pocket splayed ±22.5°. Print `sensor-coupon`
