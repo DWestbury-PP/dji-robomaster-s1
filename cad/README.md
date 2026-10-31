@@ -80,12 +80,22 @@ to attribute after the fact.
 | `ORIG_SCREW_L` | 8 mm | calipers: 9 mm overall less a 1 mm head |
 | M4 | — | DJI Quick Start Guide v1.4, step 59 (`4x M4-B`) |
 | `MOUNT_Z` | 108 mm | calibrated model, Z axis validated to 0.8% |
-| **`BORE_D`** | **46 mm** | **ESTIMATE from a photo — not measured** |
-| **`CHASSIS_THREAD`** | **5 mm** | **ESTIMATE — a stud that bottoms out holds nothing** |
-| **`SENSOR_W/H/T`** | **20 / 15 / 4 mm** | **UNVERIFIED — an AliExpress listing, not a datasheet** |
+| `BORE_D` | 46 mm | fit coupon on the chassis, 2026-10-31 — clears the loom |
+| `CHASSIS_THREAD` | 5.8 mm | 2026-10-31: the whole stud threads in and seats snug |
+| `STANDOFF_AF` | 6.75 mm | calipers, 6.7–6.8 |
+| `STANDOFF_BODY` | 20.0 / 24.9 mm | calipers; plate is cut `PLATE_GAP` (0.4) shorter |
+| `SENSOR_W/H/T` | 19.9 / 11.6 / 4.0 mm | calipers on a TOF400C, no header |
+| `SENSOR_EYE_UP` | 1.5 mm | calipers: optical centre 4.0 from top, 7.0 from pad edge |
+| **`SENSOR_CAP_W/H`** | **11.8 / 6.8 mm** | **UNVERIFIED — scaled off a photo** |
+| **`GIMBAL_DISC_D`** | **50.3 mm** | **calipers — height and keying not yet measured** |
 
-The two estimates are the open risks. `CHASSIS_THREAD` is the dangerous one:
-too long a stud feels tight while clamping nothing, holding a gimbal.
+**The open problem is the top face, not the bottom.** The gimbal's base has a
+~50.3 mm disc that, on the bare chassis, drops into the chassis's own recess.
+The riser's 46 mm bore and its 52 mm-OD collar leave it nowhere to go, so the
+gimbal cannot seat on any print made so far. The next revision needs a
+counterbore in the top face sized from the disc's diameter **and height**, and
+deep enough that the disc never bottoms out — otherwise the disc, not the
+standoffs, carries the clamp, and the plastic is back in the load path.
 
 ### Printing (Bambu X1C, 0.4 mm nozzle)
 

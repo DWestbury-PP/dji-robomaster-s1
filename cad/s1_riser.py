@@ -24,10 +24,15 @@ PROVENANCE OF THE NUMBERS
     M4                DJI Quick Start Guide v1.4, step 59 ("4x M4-B")
     MOUNT_Z / DECK_Z  measured off the calibrated model, whose Z axis was
                       validated against ground clearance to 0.8%
-    BORE_D            ESTIMATE from a photo - not yet measured
-    CHASSIS_THREAD    ESTIMATE - a stud that bottoms out holds nothing
-    SENSOR_*          UNVERIFIED - read off an AliExpress listing, not a
-                      datasheet and not calipers. Print sensor-coupon first.
+    BORE_D            confirmed by fit 2026-10-31 (fit coupon on the chassis).
+                      NOT big enough for the gimbal's ~50.3 mm base disc -
+                      see GIMBAL_DISC_D; the top interface is still open.
+    CHASSIS_THREAD    calipers 2026-10-31: the full 5.8 mm stud threads in
+                      and seats snug. No longer a risk.
+    STANDOFF_*        calipers 2026-10-31: 6.7-6.8 A/F, bodies 20.0 / 24.9
+    SENSOR_*          calipers 2026-10-31 on a TOF400C: 19.9 x 11.6, 4.0 thick
+                      including the back-side SMD parts. Cap window still
+                      read off a photo - see SENSOR_CAP_*.
 
 SENSOR COVERAGE
     Two pockets per face, splayed +-SPLAY, give 8 beams at 45 deg spacing.
@@ -46,16 +51,28 @@ ORIG_SCREW_L   = 8.0
 MOUNT_Z        = 108.0
 # --- ESTIMATES: replace as measurements land ----------------------------------
 BORE_D         = 46.0
-CHASSIS_THREAD = 5.0
+CHASSIS_THREAD = 5.8     # whole stud engages
+GIMBAL_DISC_D  = 50.3    # calipers; height and any keying tabs NOT yet known
 # --- hardware -----------------------------------------------------------------
-STANDOFF_AF    = 7.0     # hex across flats
-# --- sensor payload: UNVERIFIED, from a listing rather than a datasheet -------
+STANDOFF_AF    = 6.75    # hex across flats, measured 6.7-6.8
+# Body length by nominal size, measured. The plate is cut PLATE_GAP shorter so
+# the gimbal clamps metal-to-metal and the plastic never enters the clamp path.
+STANDOFF_BODY  = {20: 20.0, 25: 24.9}
+PLATE_GAP      = 0.4
+# --- sensor payload: TOF400C (VL53L1X), measured 2026-10-31 -----------------
 # The 27 deg cone puts the floor at ~490 mm when aimed horizontally from this
 # height, which is only 90 mm beyond the 400 mm stopping distance. That margin
 # is what caps safe speed, so it is a design constraint and not a detail.
-SENSOR_W       = 20.0    # board width
-SENSOR_H       = 15.0    # board height - must clear the wall window
-SENSOR_T       = 4.0     # board plus tallest component
+SENSOR_W       = 19.9    # board width
+SENSOR_H       = 11.6    # board height, pad row included - must clear the window
+SENSOR_T       = 4.0     # PCB + cap + back-side SMD parts; NO header (wires
+                         # are soldered straight to the pads)
+SENSOR_EYE_UP  = 1.5     # optical centre sits this far above the board centre
+                         # (4.0 mm to the top edge, 7.0 to the pad edge)
+# The three below are recorded for the next pocket revision (front lip with a
+# window for the cap); the current pocket geometry does not use them yet.
+SENSOR_CAP_W   = 11.8    # UNVERIFIED - scaled off a photo, not calipers
+SENSOR_CAP_H   = 6.8     # UNVERIFIED - same
 SENSOR_FIT     = 0.30    # clearance per pocket; tune on sensor-coupon
 SPLAY          = 22.5    # half the 45 deg spacing
 RIB            = 3.0     # plastic between the pair
@@ -83,19 +100,20 @@ STAGES = {
     "h15": dict(riser_h=15.0, collar_h=4.0, note=(
         "Least lift that still leaves usable volume. Shortest lever arm on the "
         "standoffs, so the safest for gimbal stability.")),
-    "h20": dict(riser_h=20.0, collar_h=4.0, note="Middle of the range."),
-    "h25": dict(riser_h=25.0, collar_h=4.0, note=(
+    "h20": dict(riser_h=STANDOFF_BODY[20] - PLATE_GAP, collar_h=4.0, note="Middle of the range."),
+    "h25": dict(riser_h=STANDOFF_BODY[25] - PLATE_GAP, collar_h=4.0, note=(
         "Most sensor volume, most lever arm. Compare stability against h15 on "
         "a hard stop before committing.")),
-    "sensor-coupon": dict(riser_h=25.0, collar_h=0.0, coupon=True, note=(
+    "sensor-coupon": dict(riser_h=STANDOFF_BODY[25] - PLATE_GAP, collar_h=0.0, coupon=True, note=(
         "One face segment with a splayed pair of sensor pockets. Prints in "
         "~15 min and settles SENSOR_FIT, the splay, and whether the centre "
         "rib survives - none of which the full block tests cheaply.")),
-    "h25-sensors": dict(riser_h=25.0, collar_h=4.0, sensors=True, note=(
-        "The payload block: 8 pockets at 45 deg spacing, two per face. h25 "
-        "rather than h20 because a 15 mm board in h20's 16 mm window leaves "
-        "1 mm total, which is not a printable fit. Do not print this before "
-        "sensor-coupon has confirmed a board actually slides in.")),
+    "h25-sensors": dict(riser_h=STANDOFF_BODY[25] - PLATE_GAP, collar_h=4.0, sensors=True, note=(
+        "The payload block: 8 pockets at 45 deg spacing, two per face. Chosen "
+        "when the board was believed to be 15 mm tall; the measured 11.6 mm "
+        "board also fits h20's window, so h20 vs h25 is open again. Do not "
+        "print this before sensor-coupon has confirmed a board slides in, and "
+        "not before the gimbal-disc interface is resolved (cad/README.md).")),
 }
 BUILD = ["fit-coupon", "sensor-coupon"]
 
@@ -219,7 +237,7 @@ def build_sensor_coupon(coll, name="riser_sensor-coupon"):
     splay leave enough plastic in the centre rib.
     """
     px, py = BOLT_X + 2*MARGIN, BOLT_Y + 2*MARGIN
-    h = 25.0
+    h = STANDOFF_BODY[25] - PLATE_GAP
     blk = _box(coll, px, 22.0, h, (0, py/2 - 11.0, h/2), name)
     for t in sensor_cutters(coll, h, faces=(90.0,)):
         _bool(blk, t, 'DIFFERENCE')
